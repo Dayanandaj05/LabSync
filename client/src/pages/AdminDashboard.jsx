@@ -15,8 +15,15 @@ export default function AdminDashboard() {
   const [token] = useState(localStorage.getItem("token") || "");
   const [activeTab, setActiveTab] = useState("pending"); 
   
-  // ✅ NEW: Announcement State
+  // Announcement State
   const [announcementMsg, setAnnouncementMsg] = useState("");
+  const [announcementDuration, setAnnouncementDuration] = useState(7); // Default 7 days
+
+  // Maintenance State
+  const [mLab, setMLab] = useState("CC");
+  const [mStart, setMStart] = useState("");
+  const [mEnd, setMEnd] = useState("");
+  const [mReason, setMReason] = useState("");
 
   const fetchData = async () => {
     if (!token) return;
@@ -47,10 +54,30 @@ export default function AdminDashboard() {
     e.preventDefault();
     if (!announcementMsg.trim()) return;
     try {
-      await API.post('/api/admin/announcements', { message: announcementMsg, type: 'Info' }, { headers: { Authorization: `Bearer ${token}` } });
+      await API.post('/api/admin/announcements', { 
+        message: announcementMsg, 
+        type: 'Info',
+        daysActive: Number(announcementDuration) 
+      }, { headers: { Authorization: `Bearer ${token}` } });
       alert("Announcement Posted!");
       setAnnouncementMsg("");
     } catch (err) { alert("Failed to post"); }
+  };
+
+  const handleMaintenance = async (e) => {
+    e.preventDefault();
+    if (!confirm(`Are you sure? This will CANCEL ALL bookings in ${mLab} from ${mStart} to ${mEnd}.`)) return;
+    
+    try {
+      const res = await API.post('/api/admin/labs/maintenance', {
+        labCode: mLab,
+        startDate: mStart,
+        endDate: mEnd,
+        reason: mReason
+      }, { headers: { Authorization: `Bearer ${token}` } });
+      alert(res.data.message);
+      setMReason(""); setMStart(""); setMEnd("");
+    } catch (err) { alert("Failed: " + err.response?.data?.error || err.message); }
   };
 
   const handleViewUser = async (user) => {
@@ -72,7 +99,7 @@ export default function AdminDashboard() {
   };
 
   const handleCancelBooking = async (bookingId) => {
-    if (!confirm("Cancel this booking permanently?")) return;
+    if (!confirm("Cancel this booking?")) return;
     try {
       await API.delete(`/api/admin/bookings/${bookingId}`, { headers: { Authorization: `Bearer ${token}` } });
       if (selectedUser) handleViewUser(selectedUser);
@@ -80,12 +107,8 @@ export default function AdminDashboard() {
     } catch (err) { alert("Failed"); }
   };
 
-  const formatDate = (dateString) => {
-    if (!dateString) return "N/A";
-    const date = new Date(dateString);
-    return isNaN(date.getTime()) ? "N/A" : date.toLocaleString([], { dateStyle: 'medium', timeStyle: 'short' });
-  };
-
+  // Helpers
+  const formatDate = (d) => !d ? "N/A" : new Date(d).toLocaleString([], { dateStyle: 'medium', timeStyle: 'short' });
   const filteredUsers = usersList.filter(u => u.name.toLowerCase().includes(searchTerm.toLowerCase()));
   const labChartData = stats ? stats.bookingsByLab.map(l => ({ label: l._id, value: l.count })) : [];
   const roleChartData = stats ? stats.bookingsByRole.map(r => ({ label: r._id, value: r.count })) : [];
@@ -98,7 +121,6 @@ export default function AdminDashboard() {
         <div>
           <h1 className="text-3xl font-extrabold text-slate-900 tracking-tight">Admin Dashboard</h1>
           
-          {/* ✅ QUICK ACTIONS: RECURRING / CSV */}
           <div className="flex gap-3 mt-3">
              <Link to="/recurring" className="text-xs bg-slate-900 text-white px-4 py-2 rounded hover:bg-slate-700 transition font-bold flex items-center gap-2">
                <span>🔄</span> Schedule Recurring / Tests
@@ -121,19 +143,62 @@ export default function AdminDashboard() {
         </div>
       </div>
 
-      {/* ✅ NEW: ANNOUNCEMENT INPUT */}
-      <div className="mb-8 bg-indigo-50 border border-indigo-100 p-4 rounded-xl flex gap-4 items-center">
-        <span className="text-2xl">📢</span>
-        <form onSubmit={handlePostAnnouncement} className="flex-1 flex gap-2">
-          <input 
-            type="text" 
-            placeholder="Post a global announcement (e.g. 'Labs closed tomorrow')" 
-            value={announcementMsg}
-            onChange={(e) => setAnnouncementMsg(e.target.value)}
-            className="flex-1 p-2 border border-indigo-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500"
-          />
-          <button type="submit" className="bg-indigo-600 text-white px-4 py-2 rounded-lg font-bold text-sm hover:bg-indigo-700">Post</button>
-        </form>
+      {/* ✅ TOOLS GRID: ANNOUNCEMENTS & MAINTENANCE */}
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-8">
+        
+        {/* POST ANNOUNCEMENT */}
+        <div className="bg-indigo-50 border border-indigo-100 p-5 rounded-2xl">
+          <h3 className="text-sm font-bold text-indigo-800 mb-3 flex items-center gap-2">📢 Global Announcement</h3>
+          <form onSubmit={handlePostAnnouncement} className="flex flex-col gap-3">
+            <input 
+              type="text" 
+              required
+              placeholder="Message (e.g. 'Labs closed tomorrow')" 
+              value={announcementMsg}
+              onChange={(e) => setAnnouncementMsg(e.target.value)}
+              className="p-2 border border-indigo-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500 text-sm"
+            />
+            <div className="flex gap-2">
+              <select 
+                value={announcementDuration}
+                onChange={(e) => setAnnouncementDuration(e.target.value)}
+                className="p-2 border border-indigo-200 rounded-lg text-sm bg-white"
+              >
+                <option value="1">1 Day</option>
+                <option value="3">3 Days</option>
+                <option value="7">1 Week</option>
+                <option value="30">1 Month</option>
+              </select>
+              <button type="submit" className="flex-1 bg-indigo-600 text-white py-2 rounded-lg font-bold text-sm hover:bg-indigo-700 shadow-sm">Post</button>
+            </div>
+          </form>
+        </div>
+
+        {/* LAB MAINTENANCE MODE */}
+        <div className="bg-red-50 border border-red-100 p-5 rounded-2xl">
+          <h3 className="text-sm font-bold text-red-800 mb-3 flex items-center gap-2">🚧 Maintenance / Cancel Duration</h3>
+          <form onSubmit={handleMaintenance} className="flex flex-col gap-3">
+            <div className="flex gap-2">
+              <select value={mLab} onChange={(e) => setMLab(e.target.value)} className="p-2 border border-red-200 rounded-lg text-sm bg-white font-bold text-red-900">
+                <option value="CC">CC</option>
+                <option value="IS">IS</option>
+                <option value="CAT">CAT</option>
+              </select>
+              <input type="date" required value={mStart} onChange={(e) => setMStart(e.target.value)} className="flex-1 p-2 border border-red-200 rounded-lg text-sm" />
+              <span className="self-center text-red-300">to</span>
+              <input type="date" required value={mEnd} onChange={(e) => setMEnd(e.target.value)} className="flex-1 p-2 border border-red-200 rounded-lg text-sm" />
+            </div>
+            <input 
+              type="text" required placeholder="Reason (e.g. Power Failure)" 
+              value={mReason} onChange={(e) => setMReason(e.target.value)}
+              className="p-2 border border-red-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-red-500" 
+            />
+            <button type="submit" className="bg-red-600 text-white py-2 rounded-lg font-bold text-sm hover:bg-red-700 shadow-sm">
+              Block & Cancel Bookings
+            </button>
+          </form>
+        </div>
+
       </div>
       
       {/* STATS & CHARTS */}
@@ -149,6 +214,7 @@ export default function AdminDashboard() {
       {/* PENDING TAB */}
       {activeTab === 'pending' && (
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 animate-fade-in">
+          {/* PENDING USERS */}
           <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm h-fit">
             <h2 className="text-lg font-bold mb-4">New Users ({pendingUsers.length})</h2>
             {pendingUsers.length === 0 ? <p className="text-slate-400 italic text-sm">All clear.</p> : (
@@ -165,6 +231,7 @@ export default function AdminDashboard() {
               </ul>
             )}
           </div>
+          {/* PENDING BOOKINGS */}
           <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm">
             <h2 className="text-lg font-bold mb-4">Booking Requests ({pendingBookings.length})</h2>
             {pendingBookings.length === 0 ? <p className="text-slate-400 italic text-sm">No pending bookings.</p> : (

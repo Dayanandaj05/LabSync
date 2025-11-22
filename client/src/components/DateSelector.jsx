@@ -45,9 +45,10 @@ export default function DateSelector({ selectedDate, onSelect }) {
       `}</style>
 
       <div className="flex items-center gap-3 bg-white p-2 rounded-2xl shadow-sm border border-slate-200 w-full overflow-hidden relative select-none">
+        
         <div className="absolute left-0 top-0 bottom-0 w-12 bg-gradient-to-r from-white via-white/80 to-transparent z-10 pointer-events-none"></div>
 
-        <div ref={scrollRef} onWheel={handleWheel} className="flex gap-2 overflow-x-auto no-scrollbar flex-1 scroll-smooth px-2 py-1">
+        <div ref={scrollRef} onWheel={handleWheel} className="flex gap-2 overflow-x-auto no-scrollbar flex-1 px-2 py-1">
           {days.map((dateStr) => {
             const dateObj = new Date(dateStr);
             const dayName = dateObj.toLocaleDateString('en-US', { weekday: 'short' });
@@ -57,23 +58,24 @@ export default function DateSelector({ selectedDate, onSelect }) {
             const isSelected = selectedDate === dateStr;
             const isToday = dateStr === todayStr;
             
-            // ✅ NEW COLOR LOGIC
-            const info = statusMap[dateStr] || { hasExam: false, hasReview: false, count: 0 };
-            const isFull = info.count > 20; // Threshold for "Full" (Red)
+            const info = statusMap[dateStr] || { hasExam: false, hasReview: false, hasMaintenance: false, count: 0 };
+            const isFull = info.count > 20; 
             
-            let statusDot = "bg-green-400"; // Default Green (Available)
+            let statusDot = "bg-green-400"; 
             
-            if (info.hasExam) statusDot = "bg-purple-600"; // Exam Priority
-            else if (info.hasReview) statusDot = "bg-orange-500"; // Project Review Priority
-            else if (isFull) statusDot = "bg-red-500"; // Full
-            else if (info.count === 0) statusDot = "bg-green-400"; // Empty (Available)
+            // ✅ UPDATED COLORS: Black for Maintenance
+            if (info.hasMaintenance) statusDot = "bg-slate-900"; 
+            else if (info.hasExam) statusDot = "bg-purple-600";
+            else if (info.hasReview) statusDot = "bg-orange-500";
+            else if (isFull) statusDot = "bg-red-500";
+            else if (info.count === 0) statusDot = "bg-green-400";
 
             return (
               <button
                 key={dateStr}
                 ref={isToday ? todayRef : null}
                 onClick={() => onSelect(dateStr)}
-                className={`flex flex-col items-center justify-center min-w-[64px] h-[76px] rounded-2xl transition-all duration-300 relative shrink-0 border-2 ${
+                className={`flex flex-col items-center justify-center min-w-[64px] h-[76px] rounded-2xl transition-all duration-200 relative shrink-0 border-2 ${
                   isSelected 
                     ? 'bg-slate-900 text-white border-slate-900 shadow-lg scale-105 z-20' 
                     : isToday
@@ -91,7 +93,6 @@ export default function DateSelector({ selectedDate, onSelect }) {
                   {monthName}
                 </span>
                 
-                {/* Status Dot */}
                 <span className={`absolute top-1.5 right-1.5 w-2 h-2 rounded-full ${statusDot} ring-2 ring-white shadow-sm`}></span>
               </button>
             );

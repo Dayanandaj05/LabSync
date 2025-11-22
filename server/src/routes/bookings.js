@@ -8,23 +8,17 @@ const User = require('../models/User');
 const { sendMail } = require('../utils/mailer');
 const crypto = require('crypto');
 
-// Helper to check past date
 const isPast = (dateStr) => {
   const today = new Date();
   today.setHours(0, 0, 0, 0);
   return new Date(dateStr) < today;
 };
 
-// -------------------------------
-// CREATE REGULAR BOOKING
-// -------------------------------
 router.post('/', jwtAuth, async (req, res) => {
   try {
     const { labCode, date, period, purpose, type } = req.body;
 
     if (!labCode || !date || !period) return res.status(400).json({ error: 'Missing fields' });
-    
-    // ✅ VALIDATE: No Past Bookings
     if (isPast(date)) return res.status(400).json({ error: 'Cannot book dates in the past.' });
 
     const user = await User.findById(req.user.id);
@@ -33,21 +27,30 @@ router.post('/', jwtAuth, async (req, res) => {
     const lab = await Lab.findOne({ code: labCode });
     if (!lab) return res.status(404).json({ error: 'Lab not found' });
 
-    // Check Existing APPROVED Booking
+    // ✅ FIX: ROBUST MAINTENANCE CHECK
+    const isUnderMaintenance = (lab.maintenanceLog || []).some(m => {
+      const mStart = new Date(m.start).toISOString().slice(0, 10);
+      const mEnd = new Date(m.end).toISOString().slice(0, 10);
+      return date >= mStart && date <= mEnd;
+    });
+
+    if (isUnderMaintenance) {
+      return res.status(403).json({ error: `Lab ${labCode} is under maintenance on ${date}.` });
+    }
+
     const existingBooking = await Booking.findOne({ 
       lab: lab._id, date, period, status: 'Approved' 
     }).populate('createdBy');
 
-    // --- CONFLICT HANDLING ---
     if (existingBooking) {
       if (user.role === 'Admin') {
         if (existingBooking.createdBy?.email) {
-          sendMail(existingBooking.createdBy.email, 'Booking Cancelled ⚠️', `Your booking for ${labCode} on ${date} (P${period}) was overridden by Admin.`);
+          sendMail(existingBooking.createdBy.email, 'Booking Cancelled ⚠️', `Your booking was overridden by Admin.`);
         }
         await Booking.deleteOne({ _id: existingBooking._id });
         await Log.create({ action: 'AdminOverrideBooking', user: user._id, meta: { prev: existingBooking._id, lab: labCode } });
       } else if (user.role === 'Staff' && type === 'Test') {
-        // Allow pending conflict for Staff Test
+        // Allow pending conflict
       } else {
         return res.status(400).json({ error: 'Slot already booked' });
       }
@@ -62,7 +65,12 @@ router.post('/', jwtAuth, async (req, res) => {
     });
 
     if (initialStatus === 'Pending') {
-      sendMail('admin@test.com', 'New Booking Request', `${user.name} requested ${labCode} P${period}.`);
+      if (existingBooking && user.role === 'Staff' && type === 'Test') {
+         sendMail(user.email, 'Conflict Detected ⚠️', `Your Test request overlaps with an existing booking.`);
+         sendMail('admin@test.com', 'CONFLICT: Test Request 🔴', `Staff ${user.name} requested TEST on booked slot.`);
+      } else {
+         sendMail('admin@test.com', 'New Booking Request', `${user.name} requested ${labCode} P${period}.`);
+      }
     }
 
     await Log.create({ 
@@ -75,18 +83,14 @@ router.post('/', jwtAuth, async (req, res) => {
   } catch (err) { console.error(err); res.status(500).json({ error: 'Server error' }); }
 });
 
-// -------------------------------
-// RECURRING / BULK BOOKING
-// -------------------------------
 router.post('/recurring', jwtAuth, async (req, res) => {
   try {
     if (req.user.role === 'Student') return res.status(403).json({ error: 'Students cannot create bulk bookings' });
 
     const { labCode, dates, periods, purpose, type } = req.body; 
     
-    if (!dates || dates.length === 0) return res.status(400).json({ error: 'No dates selected' });
-    
-    // ✅ VALIDATE: Check for past dates
+    if (!dates || !Array.isArray(dates) || dates.length === 0) return res.status(400).json({ error: 'No dates selected' });
+    if (!periods || !Array.isArray(periods) || periods.length === 0) return res.status(400).json({ error: 'No periods selected' });
     if (dates.some(d => isPast(d))) return res.status(400).json({ error: 'Cannot book past dates.' });
 
     const lab = await Lab.findOne({ code: labCode });
@@ -97,6 +101,18 @@ router.post('/recurring', jwtAuth, async (req, res) => {
     let conflictCount = 0;
 
     for (const date of dates) {
+      // Check Maintenance for each date
+      const isUnderMaintenance = (lab.maintenanceLog || []).some(m => {
+        const mStart = new Date(m.start).toISOString().slice(0, 10);
+        const mEnd = new Date(m.end).toISOString().slice(0, 10);
+        return date >= mStart && date <= mEnd;
+      });
+      
+      if (isUnderMaintenance) {
+        conflictCount++; // Treat maintenance blocks as conflicts
+        continue;
+      }
+
       for (const period of periods) {
         const existing = await Booking.findOne({ lab: lab._id, date, period, status: 'Approved' });
         
@@ -120,7 +136,7 @@ router.post('/recurring', jwtAuth, async (req, res) => {
     }
 
     await Log.create({ action: 'BulkBooking', user: req.user.id, meta: { success: successCount, conflicts: conflictCount, type } });
-    res.json({ message: `Processed ${successCount} slots. (${conflictCount} conflicts)` });
+    res.json({ message: `Processed ${successCount} slots. (${conflictCount} conflicts flagged for review)` });
 
   } catch (err) {
     console.error(err);
@@ -128,6 +144,7 @@ router.post('/recurring', jwtAuth, async (req, res) => {
   }
 });
 
+// ... (Keep Waitlist/Delete/History routes as is) ...
 router.post('/:id/waitlist', jwtAuth, async (req, res) => {
   try {
     const booking = await Booking.findById(req.params.id);

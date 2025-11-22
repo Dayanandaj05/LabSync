@@ -4,7 +4,7 @@ import TestCalendarModal from "./TestCalendarModal.jsx";
 
 export default function AnnouncementBanner() {
   const [announcements, setAnnouncements] = useState([]);
-  const [events, setEvents] = useState([]); // Contains Past & Future
+  const [events, setEvents] = useState([]); 
   const [showCalendar, setShowCalendar] = useState(false);
 
   useEffect(() => {
@@ -16,16 +16,13 @@ export default function AnnouncementBanner() {
       return <div className="bg-indigo-900 text-white text-center py-2 text-xs font-medium opacity-90">👋 Welcome to LabSync.</div>;
   }
 
-  // --- FILTER FOR SUMMARY (Only Future) ---
+  // --- SUMMARY LOGIC ---
   const today = new Date();
   today.setHours(0,0,0,0);
   
   const futureEvents = events.filter(e => new Date(e.date) >= today);
   
-  // Get Nearest for Display
-  const nextEvent = futureEvents.length > 0 ? futureEvents[0] : null;
-
-  // Count Logic (This Week vs Next Week)
+  // Count Logic
   const nextWeek = new Date(today);
   nextWeek.setDate(today.getDate() + 7);
 
@@ -55,30 +52,38 @@ export default function AnnouncementBanner() {
           {/* RIGHT: Summary & Buttons */}
           <div className="flex items-center gap-3 shrink-0 w-full md:w-auto justify-between md:justify-end overflow-x-auto no-scrollbar">
             
-            {/* TESTS SUMMARY */}
+            {/* TESTS SUMMARY PILL (Clickable) */}
             {(testCountThisWeek > 0 || testCountNextWeek > 0) && (
-              <div className="text-[10px] flex items-center bg-purple-900/50 border border-purple-500/50 px-3 py-1 rounded-full whitespace-nowrap">
+              <button 
+                onClick={() => setShowCalendar(true)}
+                className="text-[10px] flex items-center bg-purple-900/50 border border-purple-500/50 px-3 py-1 rounded-full whitespace-nowrap cursor-pointer hover:bg-purple-800 transition-all active:scale-95"
+                title="Click to view dates"
+              >
                 <span className="w-1.5 h-1.5 bg-purple-400 rounded-full mr-2 animate-pulse"></span>
                 <span className="text-purple-200 font-bold mr-1">TESTS:</span>
-                <span className="text-white">
+                <span className="text-white font-medium">
                   {testCountThisWeek > 0 && `${testCountThisWeek} This Week`}
                   {testCountThisWeek > 0 && testCountNextWeek > 0 && ', '}
                   {testCountNextWeek > 0 && `${testCountNextWeek} Next Week`}
                 </span>
-              </div>
+              </button>
             )}
 
-            {/* PROJECTS SUMMARY */}
+            {/* PROJECTS SUMMARY PILL (Clickable) */}
             {(projectCountThisWeek > 0 || projectCountNextWeek > 0) && (
-              <div className="text-[10px] flex items-center bg-orange-900/50 border border-orange-500/50 px-3 py-1 rounded-full whitespace-nowrap">
+              <button 
+                onClick={() => setShowCalendar(true)}
+                className="text-[10px] flex items-center bg-orange-900/50 border border-orange-500/50 px-3 py-1 rounded-full whitespace-nowrap cursor-pointer hover:bg-orange-800 transition-all active:scale-95"
+                title="Click to view dates"
+              >
                 <span className="w-1.5 h-1.5 bg-orange-400 rounded-full mr-2 animate-pulse"></span>
                 <span className="text-orange-200 font-bold mr-1">PROJECTS:</span>
-                <span className="text-white">
+                <span className="text-white font-medium">
                   {projectCountThisWeek > 0 && `${projectCountThisWeek} This Week`}
                   {projectCountThisWeek > 0 && projectCountNextWeek > 0 && ', '}
                   {projectCountNextWeek > 0 && `${projectCountNextWeek} Next Week`}
                 </span>
-              </div>
+              </button>
             )}
             
             <button 
@@ -91,25 +96,9 @@ export default function AnnouncementBanner() {
         </div>
       </div>
 
-      {/* Pass ALL events (past+future) to Calendar */}
       {showCalendar && (
         <TestCalendarModal tests={events} onClose={() => setShowCalendar(false)} />
       )}
     </>
   );
-}
-
-// Helper for Dot Colors
-function getEventColor(type) {
-  if (type === 'Test' || type === 'Exam') return "bg-purple-400";
-  if (type === 'Project Review') return "bg-orange-400";
-  if (type === 'Workshop') return "bg-pink-400";
-  return "bg-blue-400";
-}
-
-function getEventTextColor(type) {
-  if (type === 'Test' || type === 'Exam') return "text-purple-700";
-  if (type === 'Project Review') return "text-orange-700";
-  if (type === 'Workshop') return "text-pink-700";
-  return "text-blue-700";
 }

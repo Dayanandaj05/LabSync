@@ -8,10 +8,10 @@ export default function BookingModal({ slot, onClose, onSubmit }) {
   const userString = localStorage.getItem("user");
   const user = userString ? JSON.parse(userString) : null;
 
-  if (!user) return null; // Should be handled by Home redirect, but safe check
+  if (!user) return null; 
   if (!slot) return null;
 
-  const isOverrideMode = !!slot.existingBooking; // Check if we are overriding
+  const isOverrideMode = !!slot.existingBooking; 
 
   const handleSubmit = (e) => {
     e.preventDefault();
@@ -27,7 +27,7 @@ export default function BookingModal({ slot, onClose, onSubmit }) {
   };
 
   const handleCancelBooking = async () => {
-    if (!confirm("Are you sure you want to cancel this booking? The user will be notified.")) return;
+    if (!confirm("Are you sure you want to cancel this booking?")) return;
     try {
       const token = localStorage.getItem("token");
       await API.delete(`/api/admin/bookings/${slot.existingBooking._id}`, {
@@ -35,9 +35,9 @@ export default function BookingModal({ slot, onClose, onSubmit }) {
       });
       alert("Booking cancelled.");
       onClose();
-      window.location.reload(); // Simple refresh to update grid
+      window.location.reload(); 
     } catch (err) {
-      alert("Failed to cancel: " + err.message);
+      alert("Failed to cancel");
     }
   };
 
@@ -56,7 +56,6 @@ export default function BookingModal({ slot, onClose, onSubmit }) {
           </p>
         </div>
 
-        {/* SHOW EXISTING BOOKING INFO IF OVERRIDING */}
         {isOverrideMode && (
           <div className="bg-red-50 border border-red-200 p-4 rounded-xl mb-6">
             <h3 className="text-red-700 font-bold text-sm uppercase tracking-wider mb-2">⚠️ Currently Booked By:</h3>
@@ -75,7 +74,6 @@ export default function BookingModal({ slot, onClose, onSubmit }) {
         )}
 
         <form onSubmit={handleSubmit} className="space-y-5">
-          {/* OVERRIDE FORM HEADER */}
           {isOverrideMode && (
             <div className="text-xs font-bold text-slate-400 uppercase tracking-wider border-t pt-4">
               Override with New Booking
@@ -86,8 +84,8 @@ export default function BookingModal({ slot, onClose, onSubmit }) {
             <label className="block text-sm font-bold text-slate-700 mb-2">Select Purpose</label>
             <select required value={purposeType} onChange={(e) => setPurposeType(e.target.value)} className="w-full p-3 border border-slate-300 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none bg-white">
               <option value="">-- Select Reason --</option>
+              {/* ✅ REMOVED 'Maintenance' option */}
               <option value="Exam">Exam / Test</option>
-              <option value="Maintenance">Maintenance</option>
               <option value="Urgent Class">Urgent Class</option>
               <option value="Other">Other...</option>
             </select>

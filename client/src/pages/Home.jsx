@@ -5,7 +5,7 @@ import TimetableGrid from "../components/TimetableGrid.jsx";
 import BookingModal from "../components/BookingModal.jsx";
 import LogsViewer from "../components/LogsViewer.jsx"; 
 import LogoutButton from "../components/LogoutButton.jsx";
-import DateSelector from "../components/DateSelector.jsx"; // ✅ Import
+import DateSelector from "../components/DateSelector.jsx"; 
 
 export default function Home() {
   const navigate = useNavigate();
@@ -21,6 +21,10 @@ export default function Home() {
   const [isSyncing, setIsSyncing] = useState(false);
 
   const user = JSON.parse(localStorage.getItem("user") || "null");
+
+  // ✅ CHECK IF DATE IS IN PAST
+  const todayStr = new Date().toISOString().slice(0, 10);
+  const isPast = date < todayStr;
 
   const loadData = async (isBackground = false) => {
     if (!isBackground) setIsInitialLoading(true); else setIsSyncing(true);
@@ -45,13 +49,9 @@ export default function Home() {
     return () => clearInterval(interval);
   }, [date]);
 
-  // Handle Interactions
   const handleSlotClick = (lab, period, existingBooking = null) => {
-    // ✅ Prevent booking in the past
-    const today = new Date().toISOString().slice(0, 10);
-    if (date < today) {
-      return alert("You cannot book slots in the past.");
-    }
+    // ✅ STRICT BLOCK FOR PAST DATES
+    if (isPast) return;
 
     if (!user) {
       if (confirm("You must be logged in to book a slot. Go to login?")) navigate("/login");
@@ -77,10 +77,7 @@ export default function Home() {
   return (
     <div className="space-y-6">
       
-      {/* Header Controls */}
       <div className="flex flex-col lg:flex-row justify-between items-end lg:items-center gap-4">
-        
-        {/* Title & Date Selector */}
         <div className="w-full lg:flex-1">
           <div className="flex justify-between items-center mb-2 px-1">
             <h2 className="font-bold text-2xl text-slate-800 flex items-center gap-2">
@@ -88,7 +85,6 @@ export default function Home() {
               {isSyncing && <span className="flex h-2 w-2 relative"><span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-green-400 opacity-75"></span><span className="relative inline-flex rounded-full h-2 w-2 bg-green-500"></span></span>}
             </h2>
             
-            {/* Admin/User Buttons (Mobile Optimized) */}
             <div className="flex gap-2 items-center">
               {user?.role === 'Admin' && <a href="/admin" className="bg-black text-white px-3 py-1.5 rounded-lg text-xs font-bold hover:bg-slate-800">Dashboard</a>}
               {user ? (
@@ -102,12 +98,10 @@ export default function Home() {
             </div>
           </div>
 
-          {/* ✅ NEW: SLIDING DATE SELECTOR */}
           <DateSelector selectedDate={date} onSelect={setDate} />
         </div>
       </div>
 
-      {/* Legend */}
       <div className="hidden lg:flex gap-4 text-xs justify-start px-2">
           <span className="flex items-center gap-1"><span className="w-3 h-3 bg-green-100 border border-green-300 rounded"></span> Free</span>
           <span className="flex items-center gap-1"><span className="w-3 h-3 bg-yellow-100 border border-yellow-300 rounded"></span> Pending</span>
@@ -116,10 +110,16 @@ export default function Home() {
           <span className="flex items-center gap-1 ml-4 text-indigo-600 font-bold"><span className="w-3 h-3 border-2 border-indigo-500 rounded"></span> Your Booking</span>
       </div>
 
-      {/* Main Grid */}
       <div className="relative min-h-[300px]">
         {isInitialLoading && <div className="absolute inset-0 bg-white/80 backdrop-blur-sm z-10 flex items-center justify-center rounded-xl"><div className="text-gray-500 text-sm animate-pulse font-semibold">Loading Schedule...</div></div>}
-        <TimetableGrid gridData={gridData} onSlotClick={handleSlotClick} currentUser={user} />
+        
+        {/* ✅ Pass isReadOnly (isPast) to Grid */}
+        <TimetableGrid 
+          gridData={gridData} 
+          onSlotClick={handleSlotClick} 
+          currentUser={user} 
+          isReadOnly={isPast} 
+        />
       </div>
 
       <LogsViewer logs={logs} />
