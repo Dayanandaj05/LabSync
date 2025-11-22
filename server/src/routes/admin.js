@@ -1,4 +1,3 @@
-// src/routes/admin.js
 const express = require('express');
 const router = express.Router();
 
@@ -18,17 +17,33 @@ router.use((req, res, next) => {
   next();
 });
 
-// GET pending bookings
+// ------------------------------------
+// GET PENDING BOOKINGS
+// ------------------------------------
 router.get('/bookings/pending', async (req, res) => {
   try {
-    const pending = await Booking.find({ status: 'Pending' }).sort({ createdAt: -1 });
-    res.json({ pending });
+    // Find 'Pending' bookings and POPULATE the lab info so we can see the code (e.g., 'CC')
+    const pending = await Booking.find({ status: 'Pending' })
+      .populate('lab') // This fills in the 'lab' field with the full Lab object
+      .sort({ createdAt: -1 })
+      .lean();
+
+    // Map to a cleaner format if needed, handling missing labs
+    const formatted = pending.map(b => ({
+      ...b,
+      labCode: b.lab ? b.lab.code : 'Unknown Lab'
+    }));
+
+    res.json({ pending: formatted });
   } catch (err) {
+    console.error(err);
     res.status(500).json({ error: 'server error' });
   }
 });
 
-// Approve booking
+// ------------------------------------
+// APPROVE BOOKING
+// ------------------------------------
 router.put('/bookings/:id/approve', async (req, res) => {
   try {
     const booking = await Booking.findById(req.params.id);
@@ -49,7 +64,9 @@ router.put('/bookings/:id/approve', async (req, res) => {
   }
 });
 
-// Reject booking
+// ------------------------------------
+// REJECT BOOKING
+// ------------------------------------
 router.put('/bookings/:id/reject', async (req, res) => {
   try {
     const { reason } = req.body;
@@ -67,27 +84,6 @@ router.put('/bookings/:id/reject', async (req, res) => {
     });
 
     res.json({ message: 'Rejected' });
-  } catch (e) {
-    res.status(500).json({ error: 'server error' });
-  }
-});
-
-// Block lab
-router.post('/labs/block', async (req, res) => {
-  try {
-    const { labCode, date, periods, reason } = req.body;
-    const lab = await Lab.findOne({ code: labCode });
-
-    lab.blocked.push({ date, periods, reason });
-    await lab.save();
-
-    await Log.create({
-      action: 'LabBlocked',
-      user: req.user.id,
-      meta: { labCode, date, periods, reason }
-    });
-
-    res.json({ message: 'Lab blocked' });
   } catch (e) {
     res.status(500).json({ error: 'server error' });
   }

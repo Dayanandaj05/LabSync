@@ -1,9 +1,10 @@
 import React, { useState, useEffect } from "react";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, Link } from "react-router-dom"; // ✅ Import Link
+import API from "../services/api"; // ✅ Use central API service
 
 export default function Register() {
   const navigate = useNavigate();
-
+  const [error, setError] = useState("");
   const [form, setForm] = useState({
     name: "",
     email: "",
@@ -11,11 +12,10 @@ export default function Register() {
     role: "Student",
   });
 
-  // AUTO-REDIRECT IF LOGGED IN
+  // Redirect if already logged in
   useEffect(() => {
-    const token = localStorage.getItem("token");
-    if (token) navigate("/");
-  }, []);
+    if (localStorage.getItem("token")) navigate("/");
+  }, [navigate]);
 
   function handleChange(e) {
     setForm({ ...form, [e.target.name]: e.target.value });
@@ -23,78 +23,86 @@ export default function Register() {
 
   async function handleSubmit(e) {
     e.preventDefault();
+    setError("");
+    
     try {
-      const res = await fetch("http://localhost:5001/api/auth/register", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(form),
-      });
-
-      const data = await res.json();
-      if (data.error) return alert(data.error);
-
-      alert("Registration successful, awaiting approval.");
+      // ✅ Use API instance (handles localhost:5001 automatically)
+      const res = await API.post('/api/auth/register', form);
+      
+      // If successful:
+      alert(res.data.message || "Registration successful! Please wait for Admin approval.");
       navigate("/login");
+      
     } catch (err) {
-      alert("Registration failed");
+      console.error("Registration Error:", err);
+      setError(err.response?.data?.error || "Registration failed. Try again.");
     }
   }
 
   return (
     <div className="flex items-center justify-center min-h-screen bg-gray-100">
-      <div className="bg-white p-10 rounded-xl shadow-xl border border-gray-200 w-96">
-        <h2 className="text-2xl font-semibold text-center mb-6">Register</h2>
+      <div className="bg-white p-10 rounded-xl shadow-xl border border-gray-200 w-96 animate-fade-in">
+        <h2 className="text-2xl font-semibold text-center mb-6 text-gray-800">Register</h2>
+
+        {error && (
+          <div className="bg-red-100 border border-red-400 text-red-700 px-4 py-2 rounded mb-4 text-sm">
+            {error}
+          </div>
+        )}
 
         <form className="space-y-5" onSubmit={handleSubmit}>
           <input
             type="text"
             name="name"
             placeholder="Full Name"
+            required
             onChange={handleChange}
-            className="w-full px-4 py-2 border rounded-lg bg-white text-black"
+            className="w-full px-4 py-3 border rounded-lg bg-white text-black focus:ring-2 focus:ring-blue-500 outline-none"
           />
 
           <input
             type="email"
             name="email"
             placeholder="Email"
+            required
             onChange={handleChange}
-            className="w-full px-4 py-2 border rounded-lg bg-white text-black"
+            className="w-full px-4 py-3 border rounded-lg bg-white text-black focus:ring-2 focus:ring-blue-500 outline-none"
           />
 
           <input
             type="password"
             name="password"
             placeholder="Password"
+            required
             onChange={handleChange}
-            className="w-full px-4 py-2 border rounded-lg bg-white text-black"
+            className="w-full px-4 py-3 border rounded-lg bg-white text-black focus:ring-2 focus:ring-blue-500 outline-none"
           />
 
           <select
             name="role"
             onChange={handleChange}
-            className="w-full px-4 py-2 border rounded-lg bg-white text-black"
+            className="w-full px-4 py-3 border rounded-lg bg-white text-black focus:ring-2 focus:ring-blue-500 outline-none"
           >
-            <option>Student</option>
-            <option>Staff</option>
+            <option value="Student">Student</option>
+            <option value="Staff">Staff</option>
           </select>
 
           <button
             type="submit"
-            className="w-full py-2 bg-gray-900 text-white rounded-lg"
+            className="w-full py-3 bg-gray-900 hover:bg-gray-800 text-white rounded-lg font-semibold transition duration-200"
           >
             Register
           </button>
         </form>
 
-        <p className="text-center mt-5 text-sm">
+        <p className="text-center mt-5 text-sm text-gray-600">
           Already have an account?
-          <button
-            onClick={() => navigate("/login")}
-            className="ml-2 text-blue-600 underline"
+          <Link
+            to="/login"
+            className="ml-2 text-blue-600 underline font-semibold"
           >
             Login
-          </button>
+          </Link>
         </p>
       </div>
     </div>

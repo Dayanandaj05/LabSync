@@ -31,29 +31,58 @@ router.post('/register', async (req, res) => {
   }
 });
 
-// Login
 router.post('/login', async (req, res) => {
+  console.log('👉 [LOGIN ATTEMPT] Request Body:', req.body); // Check what frontend sent
+
   try {
     const { email, password } = req.body;
-    if (!email || !password) return res.status(400).json({ error: 'Missing fields' });
+    
+    // 1. Check if data arrived
+    if (!email || !password) {
+      console.log('❌ [LOGIN FAIL] Missing email or password');
+      return res.status(400).json({ error: 'Missing fields' });
+    }
 
+    // 2. Find User
     const user = await User.findOne({ email: email.toLowerCase() });
-    if (!user) return res.status(401).json({ error: 'Invalid credentials' });
+    if (!user) {
+      console.log(`❌ [LOGIN FAIL] User not found: ${email}`);
+      return res.status(401).json({ error: 'User does not exist' });
+    }
 
-    if (user.status === 'Pending') return res.status(403).json({ error: 'Account pending approval' });
-    if (user.status === 'Rejected') return res.status(403).json({ error: 'Account rejected', reason: user.rejectReason });
+    // 3. Check Status
+    if (user.status !== 'Approved') {
+        console.log(`❌ [LOGIN FAIL] Status is ${user.status}`);
+        return res.status(403).json({ error: `Account status: ${user.status}` });
+    }
 
+    // 4. Check Password
     const ok = await bcrypt.compare(password, user.password);
-    if (!ok) return res.status(401).json({ error: 'Invalid credentials' });
+    if (!ok) {
+      console.log('❌ [LOGIN FAIL] Password mismatch');
+      return res.status(401).json({ error: 'Wrong password' });
+    }
 
-    const token = jwt.sign({ id: user._id, email: user.email, role: user.role, name: user.name }, JWT_SECRET, { expiresIn: '8h' });
+    // 5. Success
+    console.log('✅ [LOGIN SUCCESS] User logged in:', user.email);
+    const token = jwt.sign(
+      { id: user._id, email: user.email, role: user.role, name: user.name },
+      process.env.JWT_SECRET || 'devsecret',
+      { expiresIn: '8h' }
+    );
 
-    await Log.create({ action: 'UserLoggedIn', meta: { userId: user._id, email: user.email } });
-    return res.json({ message: 'Login successful', token });
+    return res.json({ 
+      message: 'Login successful', 
+      token,
+      user: { id: user._id, name: user.name, email: user.email, role: user.role } 
+    });
+
   } catch (err) {
-    console.error('Login error', err);
+    console.error('💥 [LOGIN ERROR]', err);
     return res.status(500).json({ error: 'Server error' });
   }
 });
+
+
 
 module.exports = router;

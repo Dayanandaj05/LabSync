@@ -8,7 +8,7 @@ const jwtAuth = require('../middleware/jwtAuth');
 const User = require('../models/User');
 
 // -------------------------------
-// CREATE BOOKING (All Pending)
+// CREATE BOOKING
 // -------------------------------
 router.post('/', jwtAuth, async (req, res) => {
   try {
@@ -59,11 +59,14 @@ router.post('/', jwtAuth, async (req, res) => {
 
     console.log('[STEP] Slot not blocked');
 
-    // NEW LOGIC: All bookings ALWAYS become Pending
+    // ✅ NEW LOGIC: Auto-Approve if Admin, otherwise Pending
     const priorityMap = { Admin: 3, Staff: 2, Student: 1 };
     const priority = priorityMap[user.role] || 1;
+    
+    // Admins get instant approval
+    const initialStatus = user.role === 'Admin' ? 'Approved' : 'Pending';
 
-    const pendingBooking = await Booking.create({
+    const booking = await Booking.create({
       lab: lab._id,
       date,
       period,
@@ -71,21 +74,21 @@ router.post('/', jwtAuth, async (req, res) => {
       creatorName: user.name,
       role: user.role,
       purpose: purpose || '',
-      status: 'Pending',
+      status: initialStatus, // ⬅️ Dynamic Status
       priority
     });
 
-    console.log('[STEP] Booking created as Pending:', pendingBooking._id);
+    console.log(`[STEP] Booking created. Status: ${initialStatus}`);
 
     await Log.create({
-      action: 'BookingCreated_Pending',
+      action: initialStatus === 'Approved' ? 'BookingAutoApproved' : 'BookingCreated_Pending',
       user: user._id,
-      meta: { bookingId: pendingBooking._id }
+      meta: { bookingId: booking._id }
     });
 
     return res.json({
-      message: 'Booking created and sent for admin review',
-      booking: pendingBooking
+      message: initialStatus === 'Approved' ? 'Slot booked successfully!' : 'Request sent to Admin.',
+      booking: booking
     });
 
   } catch (err) {
