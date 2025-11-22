@@ -12,7 +12,6 @@ router.get('/grid-data', async (req, res) => {
     if (!date) return res.status(400).json({ error: 'Date required' });
 
     const labs = await Lab.find().lean();
-    // Sort: Approved bookings overwrite Pending ones in frontend map
     const bookings = await Booking.find({ date }).populate('lab').sort({ status: 1 }).lean();
 
     res.json({
@@ -33,7 +32,7 @@ router.get('/grid-data', async (req, res) => {
   } catch (err) { res.status(500).json({ error: 'Server Error' }); }
 });
 
-// ✅ NEW: GET CALENDAR STATUS (For Date Selector)
+// GET CALENDAR STATUS
 router.get('/calendar-status', async (req, res) => {
   try {
     const { start, days } = req.query;
@@ -42,22 +41,35 @@ router.get('/calendar-status', async (req, res) => {
     const endDate = new Date(startDate);
     endDate.setDate(startDate.getDate() + numDays);
 
-    // Get all bookings in range
     const bookings = await Booking.find({ 
       date: { $gte: startDate.toISOString().slice(0, 10), $lt: endDate.toISOString().slice(0, 10) },
       status: 'Approved'
     }).lean();
 
-    const statusMap = {}; // { "2023-10-01": { hasExam: true, count: 5 } }
+    const statusMap = {}; 
 
     bookings.forEach(b => {
-      if (!statusMap[b.date]) statusMap[b.date] = { hasExam: false, count: 0 };
+      if (!statusMap[b.date]) statusMap[b.date] = { hasExam: false, hasReview: false, count: 0 };
       statusMap[b.date].count++;
-      if (b.type === 'Test' || b.type === 'Exam') statusMap[b.date].hasExam = true;
+      if (['Test', 'Exam'].includes(b.type)) statusMap[b.date].hasExam = true;
+      if (['Project Review', 'Review'].includes(b.type)) statusMap[b.date].hasReview = true;
     });
 
     res.json({ statusMap });
   } catch (err) { res.status(500).json({ error: 'Error' }); }
+});
+
+// ✅ UPDATED: Return ALL tests (Past & Future) for History View
+router.get('/upcoming-tests', async (req, res) => {
+  try {
+    const tests = await Booking.find({ 
+      type: { $in: ['Test', 'Exam', 'Project Review', 'Workshop'] }
+    })
+    .populate('lab', 'code')
+    .sort({ date: 1 }); // Sort Oldest to Newest
+    
+    res.json({ tests });
+  } catch (err) { res.status(500).json({ error: 'error' }); }
 });
 
 router.get('/logs', async (req, res) => {
@@ -67,11 +79,6 @@ router.get('/logs', async (req, res) => {
 router.get('/announcements', async (req, res) => {
     const announcements = await Announcement.find({ active: true }).sort({ createdAt: -1 }).limit(5);
     res.json({ announcements });
-});
-router.get('/upcoming-tests', async (req, res) => {
-    const today = new Date().toISOString().slice(0, 10);
-    const tests = await Booking.find({ type: { $in: ['Test', 'Exam'] }, date: { $gte: today } }).populate('lab', 'code').sort({ date: 1 }).limit(5);
-    res.json({ tests });
 });
 
 module.exports = router;

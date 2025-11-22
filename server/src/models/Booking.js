@@ -8,19 +8,21 @@ const BookingSchema = new mongoose.Schema({
   creatorName: { type: String },
   role: { type: String, enum: ['Admin','Staff','Student'], default: 'Student' },
   
-  // ✅ NEW FIELDS
-  type: { type: String, enum: ['Regular', 'Test', 'Exam', 'Event'], default: 'Regular' }, 
-  purpose: { type: String },
+  // ✅ UPDATED ENUM
+  type: { 
+    type: String, 
+    enum: ['Regular', 'Test', 'Exam', 'Event', 'Project Review', 'Workshop'], 
+    default: 'Regular' 
+  }, 
   
+  purpose: { type: String },
   status: { type: String, enum: ['Pending','Approved','Rejected'], default: 'Pending' },
   adminReason: { type: String, default: '' },
   priority: { type: Number, default: 1 },
   
-  // ✅ RECURRING INFO
   isRecurring: { type: Boolean, default: false },
-  recurrenceId: { type: String }, // UUID to group recurring bookings together
+  recurrenceId: { type: String }, 
 
-  // ✅ WAITLIST SYSTEM
   waitlist: [{
     user: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
     email: { type: String },
