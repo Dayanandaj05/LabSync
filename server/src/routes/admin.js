@@ -3,8 +3,9 @@ const router = express.Router();
 
 const jwtAuth = require('../middleware/jwtAuth');
 const Booking = require('../models/Booking');
-const Lab = require('../models/Lab');
+const User = require('../models/User'); // Needed to get student email
 const Log = require('../models/Log');
+const { sendMail } = require('../utils/mailer'); // Import mailer
 
 // 🔒 ALL admin routes must use JWT auth
 router.use(jwtAuth);
@@ -22,16 +23,20 @@ router.use((req, res, next) => {
 // ------------------------------------
 router.get('/bookings/pending', async (req, res) => {
   try {
-    // Find 'Pending' bookings and POPULATE the lab info so we can see the code (e.g., 'CC')
+    // Find 'Pending' bookings
+    // 1. Populate 'lab' to get the lab code (e.g. 'CC')
+    // 2. Populate 'createdBy' to get the student's email for notifications
     const pending = await Booking.find({ status: 'Pending' })
-      .populate('lab') // This fills in the 'lab' field with the full Lab object
+      .populate('lab')
+      .populate('createdBy', 'email') 
       .sort({ createdAt: -1 })
       .lean();
 
-    // Map to a cleaner format if needed, handling missing labs
+    // Map to a cleaner format
     const formatted = pending.map(b => ({
       ...b,
-      labCode: b.lab ? b.lab.code : 'Unknown Lab'
+      labCode: b.lab ? b.lab.code : 'Unknown Lab',
+      creatorEmail: b.createdBy ? b.createdBy.email : 'unknown@test.com'
     }));
 
     res.json({ pending: formatted });
@@ -46,12 +51,24 @@ router.get('/bookings/pending', async (req, res) => {
 // ------------------------------------
 router.put('/bookings/:id/approve', async (req, res) => {
   try {
-    const booking = await Booking.findById(req.params.id);
+    // We need to populate createdBy to get the email address
+    const booking = await Booking.findById(req.params.id).populate('createdBy');
+    
     if (!booking) return res.status(404).json({ error: 'not found' });
 
     booking.status = 'Approved';
     await booking.save();
 
+    // ✅ SEND EMAIL TO STUDENT
+    if (booking.createdBy && booking.createdBy.email) {
+      sendMail(
+        booking.createdBy.email,
+        'Booking Approved! ✅',
+        `Great news! Your booking for ${booking.date} (Period ${booking.period}) has been APPROVED.`
+      );
+    }
+
+    // Log the action
     await Log.create({
       action: 'AdminApprovedBooking',
       user: req.user.id,
@@ -60,6 +77,7 @@ router.put('/bookings/:id/approve', async (req, res) => {
 
     res.json({ message: 'Approved' });
   } catch (e) {
+    console.error(e);
     res.status(500).json({ error: 'server error' });
   }
 });
@@ -70,13 +88,26 @@ router.put('/bookings/:id/approve', async (req, res) => {
 router.put('/bookings/:id/reject', async (req, res) => {
   try {
     const { reason } = req.body;
-    const booking = await Booking.findById(req.params.id);
+    
+    // Populate createdBy to get email
+    const booking = await Booking.findById(req.params.id).populate('createdBy');
+
     if (!booking) return res.status(404).json({ error: 'not found' });
 
     booking.status = 'Rejected';
     booking.adminReason = reason || 'Rejected';
     await booking.save();
 
+    // ✅ SEND EMAIL TO STUDENT
+    if (booking.createdBy && booking.createdBy.email) {
+      sendMail(
+        booking.createdBy.email,
+        'Booking Rejected ❌',
+        `Your booking for ${booking.date} (Period ${booking.period}) was REJECTED.\n\nReason: ${reason}`
+      );
+    }
+
+    // Log the action
     await Log.create({
       action: 'AdminRejectedBooking',
       user: req.user.id,
@@ -85,6 +116,7 @@ router.put('/bookings/:id/reject', async (req, res) => {
 
     res.json({ message: 'Rejected' });
   } catch (e) {
+    console.error(e);
     res.status(500).json({ error: 'server error' });
   }
 });
