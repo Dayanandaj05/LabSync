@@ -3,85 +3,126 @@ import React from "react";
 const PERIOD_LABELS = {
   1: "8:30 - 9:20",
   2: "9:20 - 10:10",
-  3: "10:10 - 10:30 (Break)",
+  3: "10:10 - 10:30", // BREAK
   4: "10:30 - 11:20",
   5: "11:20 - 12:10",
-  6: "12:10 - 1:40 (Lunch)",
+  6: "12:10 - 1:40",  // LUNCH
   7: "1:40 - 2:30",
   8: "2:30 - 3:20",
   9: "3:20 - 4:30",
 };
 
-export default function TimetableGrid({ gridData, onSlotClick }) {
-  const { labs, schedule } = gridData;
+export default function TimetableGrid({ gridData, onSlotClick, currentUser }) {
+  const { labs = [], schedule = {} } = gridData || {}; 
   const periods = Object.keys(PERIOD_LABELS).map(Number);
+  
+  // Check if user is Admin
+  const isAdmin = currentUser?.role === 'Admin';
 
-  // Helper to get cell style based on status
   const getCellStyle = (cell) => {
-    if (!cell) return "bg-green-50 hover:bg-green-100 cursor-pointer"; // Free
-    if (cell.status === "Pending") return "bg-yellow-100 border-yellow-300 cursor-not-allowed";
-    if (cell.status === "Rejected") return "bg-red-100 cursor-not-allowed"; // Or treat as free depending on logic
+    if (!cell) {
+      return "bg-white hover:bg-emerald-50/60 hover:shadow-[inset_0_0_0_2px_rgba(16,185,129,0.2)] cursor-pointer group";
+    }
     
-    // Approved
-    if (cell.role === "Staff") return "bg-purple-100 border-purple-300 cursor-not-allowed";
-    return "bg-blue-100 border-blue-300 cursor-not-allowed"; // Student Approved
+    const isMine = currentUser && cell.creatorName === currentUser.name;
+    const baseBorder = isMine ? "border-2 border-indigo-500 z-10" : "border-l-4"; 
+
+    // ✅ Admin Hover Effect for Occupied Slots
+    const adminCursor = isAdmin ? "cursor-pointer hover:opacity-80 hover:shadow-inner" : "cursor-not-allowed";
+
+    if (cell.status === "Pending") return `bg-amber-50 border-amber-300 ${adminCursor} ${baseBorder}`;
+    if (cell.role === "Staff") return `bg-purple-50 border-purple-300 ${adminCursor} ${baseBorder}`;
+    return `bg-blue-50 border-blue-300 ${adminCursor} ${baseBorder}`; 
   };
 
   const getCellContent = (cell) => {
-    if (!cell) return <span className="text-green-600 text-xs font-bold">Available</span>;
-    
-    const icons = {
-      "Project Work": "💻",
-      "Study Session": "📚",
-      "Placement Prep": "💼",
-      "Extra Class": "🎓",
-      "Workshop": "🛠️"
-    };
+    if (!cell) {
+      return (
+        <div className="flex items-center justify-center h-full">
+          <span className="text-emerald-600/0 group-hover:text-emerald-600 text-[10px] font-bold uppercase tracking-widest transition-all duration-300 transform group-hover:translate-y-0 translate-y-2">
+            Book
+          </span>
+        </div>
+      );
+    }
+
+    const isMine = currentUser && cell.creatorName === currentUser.name;
 
     return (
-      <div className="flex flex-col items-center justify-center h-full text-xs">
-        <span>{icons[cell.purpose] || "📅"}</span>
-        <span className="font-semibold truncate w-full px-1">{cell.creatorName}</span>
-        <span className="text-[10px] opacity-75">{cell.status}</span>
+      <div className="flex flex-col items-center justify-center h-full w-full p-1 animate-fade-in relative">
+        {isMine && (
+          <span className="absolute top-1 right-1 w-2 h-2 bg-indigo-500 rounded-full animate-pulse" title="Your Booking"></span>
+        )}
+        <span className={`font-bold text-xs truncate w-full text-center ${isMine ? 'text-indigo-700' : 'text-gray-800'}`}>
+          {isMine ? "YOU" : cell.creatorName}
+        </span>
+        <span className="text-[10px] text-gray-500 truncate max-w-[90%] italic">
+          {cell.purpose}
+        </span>
+        <div className={`mt-1 text-[9px] px-2 py-0.5 rounded-full font-medium shadow-sm bg-white/80 backdrop-blur-sm ${
+          cell.status === 'Approved' ? 'text-emerald-700' : 'text-amber-700'
+        }`}>
+          {cell.status}
+        </div>
       </div>
     );
   };
 
   return (
-    <div className="overflow-x-auto pb-4">
-      <table className="min-w-full border-collapse border border-gray-200 bg-white shadow-sm rounded-lg overflow-hidden">
-        <thead className="bg-gray-800 text-white">
-          <tr>
-            <th className="p-3 border border-gray-700 text-left w-32 sticky left-0 bg-gray-800 z-10">Lab</th>
-            {periods.map((p) => (
-              <th key={p} className="p-2 border border-gray-700 text-center text-xs font-medium w-28">
-                P{p} <br /> <span className="opacity-50 text-[10px]">{PERIOD_LABELS[p]}</span>
+    <div className="overflow-hidden rounded-2xl shadow-xl border border-gray-200 bg-white ring-1 ring-gray-100">
+      <div className="overflow-x-auto custom-scrollbar">
+        <table className="min-w-full border-collapse">
+          <thead>
+            <tr>
+              <th className="p-4 bg-slate-900 text-white text-left min-w-[140px] sticky left-0 z-20 shadow-[4px_0_12px_-4px_rgba(0,0,0,0.3)]">
+                <span className="text-sm font-bold tracking-wider uppercase flex items-center gap-2">💻 Labs</span>
               </th>
-            ))}
-          </tr>
-        </thead>
-        <tbody>
-          {labs.map((lab) => (
-            <tr key={lab.code} className="hover:bg-gray-50">
-              <td className="p-3 border border-gray-200 font-bold text-gray-700 sticky left-0 bg-white z-10 shadow-sm">
-                {lab.code}
-              </td>
-              {periods.map((p) => {
-                const cellData = schedule[lab.code]?.[p];
-                return (
-                  <td
-                    key={`${lab.code}-${p}`}
-                    className={`border border-gray-200 text-center h-20 w-28 transition-all relative ${getCellStyle(cellData)}`}
-                    onClick={() => !cellData && onSlotClick(lab, p)}
-                  >
-                    {getCellContent(cellData)}
-                  </td>
-                );
-              })}
+              {periods.map((p) => (
+                <th key={p} className={`p-3 text-center min-w-[110px] border-b-4 transition-colors ${p===3 || p===6 ? "bg-slate-100 border-slate-300 text-slate-400" : "bg-slate-50 border-indigo-500/20 text-slate-600"}`}>
+                  <div className="flex flex-col items-center justify-center h-full">
+                    <span className={`text-xs font-extrabold ${p===3 || p===6 ? "tracking-widest" : ""}`}>
+                      {p === 3 ? "☕ BREAK" : p === 6 ? "🍽️ LUNCH" : `PERIOD ${p}`}
+                    </span>
+                    <span className="text-[10px] font-medium opacity-60 mt-1">{PERIOD_LABELS[p]}</span>
+                  </div>
+                </th>
+              ))}
             </tr>
-          ))}
-        </tbody>
-      </table>
+          </thead>
+          <tbody>
+            {labs.map((lab) => (
+              <tr key={lab.code} className="border-b border-gray-100 last:border-none group hover:bg-slate-50/30 transition-colors">
+                <td className="p-4 bg-white font-bold text-slate-700 sticky left-0 z-10 shadow-[4px_0_12px_-4px_rgba(0,0,0,0.05)] group-hover:bg-slate-50 transition-colors">
+                  <div className="flex flex-col">
+                    <span className="text-lg text-indigo-600">{lab.code}</span>
+                    <span className="text-[10px] text-gray-400 font-normal uppercase tracking-wide">{lab.name}</span>
+                  </div>
+                </td>
+                {periods.map((p) => {
+                  if (p === 3 || p === 6) {
+                    return (
+                      <td key={`${lab.code}-${p}`} className="bg-slate-100/50 p-0 relative overflow-hidden">
+                        <div className="absolute inset-0 opacity-[0.03]" style={{ backgroundImage: 'repeating-linear-gradient(45deg, #000 0, #000 1px, transparent 0, transparent 50%)', backgroundSize: '10px 10px' }} />
+                      </td>
+                    );
+                  }
+                  const cellData = schedule[lab.code]?.[p];
+                  return (
+                    <td
+                      key={`${lab.code}-${p}`}
+                      // ✅ FIX: Allow click if cell is empty OR if user is Admin
+                      onClick={() => (!cellData || isAdmin) && onSlotClick(lab, p, cellData)}
+                      className={`h-28 p-1 border-r border-dashed border-gray-100 relative transition-all duration-200 ease-out ${getCellStyle(cellData)}`}
+                    >
+                      {getCellContent(cellData)}
+                    </td>
+                  );
+                })}
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
     </div>
   );
 }

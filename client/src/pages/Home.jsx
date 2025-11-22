@@ -1,72 +1,74 @@
 import React, { useEffect, useState } from "react";
-import API, { createBooking } from "../services/api.js"; // Added .js extension
-import TimetableGrid from "../components/TimetableGrid.jsx"; // Added .jsx extension
-import BookingModal from "../components/BookingModal.jsx"; // Added .jsx extension
-import LogoutButton from "../components/LogoutButton.jsx"; // Added .jsx extension
+import { useNavigate, useSearchParams } from "react-router-dom";
+import API, { createBooking, getLogs } from "../services/api.js";
+import TimetableGrid from "../components/TimetableGrid.jsx";
+import BookingModal from "../components/BookingModal.jsx";
+import LogsViewer from "../components/LogsViewer.jsx"; 
+import LogoutButton from "../components/LogoutButton.jsx";
+import DateSelector from "../components/DateSelector.jsx"; // ✅ Import
 
 export default function Home() {
-  const [date, setDate] = useState(new Date().toISOString().slice(0, 10));
+  const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
+  
+  const initialDate = searchParams.get("date") || new Date().toISOString().slice(0, 10);
+  const [date, setDate] = useState(initialDate);
+
   const [gridData, setGridData] = useState({ labs: [], schedule: {} });
-  const [selectedSlot, setSelectedSlot] = useState(null); // For Modal
-  const [loading, setLoading] = useState(false);
+  const [logs, setLogs] = useState([]); 
+  const [selectedSlot, setSelectedSlot] = useState(null); 
+  const [isInitialLoading, setIsInitialLoading] = useState(true);
+  const [isSyncing, setIsSyncing] = useState(false);
 
-  // ✅ GET USER INFO (For Admin Button Check)
-  const user = JSON.parse(localStorage.getItem("user") || "{}");
+  const user = JSON.parse(localStorage.getItem("user") || "null");
 
-  // 1. Fetch Data & Transform for Grid
-  const loadSchedule = async () => {
-    setLoading(true);
+  const loadData = async (isBackground = false) => {
+    if (!isBackground) setIsInitialLoading(true); else setIsSyncing(true);
     try {
-      // Call the new backend route
       const { data } = await API.get(`/api/public/grid-data?date=${date}`);
-      
-      // Transform array of bookings into Object Dictionary: schedule[labCode][period] = booking
       const scheduleMap = {};
-      
       if (data.bookings) {
         data.bookings.forEach((b) => {
           if (!scheduleMap[b.labCode]) scheduleMap[b.labCode] = {};
           scheduleMap[b.labCode][b.period] = b;
         });
       }
-
-      setGridData({
-        labs: data.labs || [],
-        schedule: scheduleMap
-      });
-
-    } catch (err) {
-      console.error("Failed to load schedule", err);
-    } finally {
-      setLoading(false);
-    }
+      setGridData({ labs: data.labs || [], schedule: scheduleMap });
+      const logsData = await getLogs(50); 
+      setLogs(logsData.logs || []);
+    } catch (err) { console.error(err); } finally { setIsInitialLoading(false); setIsSyncing(false); }
   };
 
   useEffect(() => {
-    loadSchedule();
+    loadData(false);
+    const interval = setInterval(() => loadData(true), 10000); 
+    return () => clearInterval(interval);
   }, [date]);
 
-  // 2. Handle Grid Click
-  const handleSlotClick = (lab, period) => {
-    setSelectedSlot({
-      labCode: lab.code,
-      labName: lab.name,
-      date,
-      period
-    });
+  // Handle Interactions
+  const handleSlotClick = (lab, period, existingBooking = null) => {
+    // ✅ Prevent booking in the past
+    const today = new Date().toISOString().slice(0, 10);
+    if (date < today) {
+      return alert("You cannot book slots in the past.");
+    }
+
+    if (!user) {
+      if (confirm("You must be logged in to book a slot. Go to login?")) navigate("/login");
+      return;
+    }
+    if (existingBooking && user.role !== 'Admin') return;
+
+    setSelectedSlot({ labCode: lab.code, labName: lab.name, date, period, existingBooking });
   };
 
-  // 3. Handle Booking Submission
   const handleBookingSubmit = async (payload) => {
     try {
       const token = localStorage.getItem("token");
       const res = await createBooking(payload, token);
-      
-      // ✅ Dynamic Message: "Approved" for Admin, "Pending" for others
       alert(res.data?.message || "Request processed.");
-      
       setSelectedSlot(null);
-      loadSchedule(); // Refresh grid
+      loadData(true); 
     } catch (err) {
       alert(err.response?.data?.error || "Booking failed");
     }
@@ -74,60 +76,55 @@ export default function Home() {
 
   return (
     <div className="space-y-6">
+      
       {/* Header Controls */}
-      <div className="flex flex-col md:flex-row justify-between items-center bg-white p-4 rounded-lg shadow-sm border">
+      <div className="flex flex-col lg:flex-row justify-between items-end lg:items-center gap-4">
         
-        {/* Left: Date Picker */}
-        <div className="flex items-center gap-4">
-          <h2 className="font-bold text-lg text-gray-800">Lab Schedule</h2>
-          <input
-            type="date"
-            value={date}
-            onChange={(e) => setDate(e.target.value)}
-            className="border rounded px-3 py-2 focus:ring-2 focus:ring-blue-500 outline-none"
-          />
-        </div>
+        {/* Title & Date Selector */}
+        <div className="w-full lg:flex-1">
+          <div className="flex justify-between items-center mb-2 px-1">
+            <h2 className="font-bold text-2xl text-slate-800 flex items-center gap-2">
+              Lab Schedule
+              {isSyncing && <span className="flex h-2 w-2 relative"><span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-green-400 opacity-75"></span><span className="relative inline-flex rounded-full h-2 w-2 bg-green-500"></span></span>}
+            </h2>
+            
+            {/* Admin/User Buttons (Mobile Optimized) */}
+            <div className="flex gap-2 items-center">
+              {user?.role === 'Admin' && <a href="/admin" className="bg-black text-white px-3 py-1.5 rounded-lg text-xs font-bold hover:bg-slate-800">Dashboard</a>}
+              {user ? (
+                <div className="flex items-center gap-2 bg-white px-2 py-1 rounded-lg border border-slate-200 shadow-sm">
+                   <span className="text-xs font-bold text-slate-700 hidden sm:inline">{user.name}</span>
+                   <LogoutButton />
+                </div>
+              ) : (
+                <button onClick={() => navigate("/login")} className="bg-blue-600 text-white px-4 py-1.5 rounded-lg text-xs font-bold shadow-sm hover:bg-blue-700">Login</button>
+              )}
+            </div>
+          </div>
 
-        {/* Right: Buttons & Legend */}
-        <div className="flex gap-4 items-center mt-4 md:mt-0">
-           
-           {/* ✅ ADMIN DASHBOARD BUTTON (Only for Admins) */}
-           {user.role === 'Admin' && (
-             <a 
-               href="/admin" 
-               className="bg-black text-white px-4 py-2 rounded text-sm font-bold hover:bg-gray-800 transition shadow-md"
-             >
-               Go to Dashboard
-             </a>
-           )}
-
-           {/* Key / Legend */}
-           <div className="hidden lg:flex gap-3 text-xs">
-              <span className="flex items-center gap-1"><span className="w-3 h-3 bg-green-100 border border-green-300 rounded"></span> Free</span>
-              <span className="flex items-center gap-1"><span className="w-3 h-3 bg-yellow-100 border border-yellow-300 rounded"></span> Pending</span>
-              <span className="flex items-center gap-1"><span className="w-3 h-3 bg-blue-100 border border-blue-300 rounded"></span> Student</span>
-              <span className="flex items-center gap-1"><span className="w-3 h-3 bg-purple-100 border border-purple-300 rounded"></span> Staff</span>
-           </div>
-           
-           <LogoutButton />
+          {/* ✅ NEW: SLIDING DATE SELECTOR */}
+          <DateSelector selectedDate={date} onSelect={setDate} />
         </div>
       </div>
 
-      {/* Main Grid */}
-      {loading ? (
-        <div className="text-center py-10 text-gray-500">Loading schedule...</div>
-      ) : (
-        <TimetableGrid gridData={gridData} onSlotClick={handleSlotClick} />
-      )}
+      {/* Legend */}
+      <div className="hidden lg:flex gap-4 text-xs justify-start px-2">
+          <span className="flex items-center gap-1"><span className="w-3 h-3 bg-green-100 border border-green-300 rounded"></span> Free</span>
+          <span className="flex items-center gap-1"><span className="w-3 h-3 bg-yellow-100 border border-yellow-300 rounded"></span> Pending</span>
+          <span className="flex items-center gap-1"><span className="w-3 h-3 bg-blue-100 border border-blue-300 rounded"></span> Student</span>
+          <span className="flex items-center gap-1"><span className="w-3 h-3 bg-purple-100 border border-purple-300 rounded"></span> Staff</span>
+          <span className="flex items-center gap-1 ml-4 text-indigo-600 font-bold"><span className="w-3 h-3 border-2 border-indigo-500 rounded"></span> Your Booking</span>
+      </div>
 
-      {/* Modal */}
-      {selectedSlot && (
-        <BookingModal
-          slot={selectedSlot}
-          onClose={() => setSelectedSlot(null)}
-          onSubmit={handleBookingSubmit}
-        />
-      )}
+      {/* Main Grid */}
+      <div className="relative min-h-[300px]">
+        {isInitialLoading && <div className="absolute inset-0 bg-white/80 backdrop-blur-sm z-10 flex items-center justify-center rounded-xl"><div className="text-gray-500 text-sm animate-pulse font-semibold">Loading Schedule...</div></div>}
+        <TimetableGrid gridData={gridData} onSlotClick={handleSlotClick} currentUser={user} />
+      </div>
+
+      <LogsViewer logs={logs} />
+
+      {selectedSlot && <BookingModal slot={selectedSlot} onClose={() => setSelectedSlot(null)} onSubmit={handleBookingSubmit} />}
     </div>
   );
 }

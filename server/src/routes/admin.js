@@ -1,124 +1,133 @@
 const express = require('express');
 const router = express.Router();
-
 const jwtAuth = require('../middleware/jwtAuth');
 const Booking = require('../models/Booking');
-const User = require('../models/User'); // Needed to get student email
+const User = require('../models/User');
+const Announcement = require('../models/Announcement'); 
 const Log = require('../models/Log');
-const { sendMail } = require('../utils/mailer'); // Import mailer
+const { sendMail } = require('../utils/mailer');
 
-// 🔒 ALL admin routes must use JWT auth
 router.use(jwtAuth);
-
-// 🔒 Only Admin can enter
 router.use((req, res, next) => {
-  if (req.user.role !== 'Admin') {
-    return res.status(403).json({ error: 'Admin only' });
-  }
+  if (req.user.role !== 'Admin') return res.status(403).json({ error: 'Admin only' });
   next();
 });
 
-// ------------------------------------
-// GET PENDING BOOKINGS
-// ------------------------------------
+// --- STANDARD ROUTES ---
+
 router.get('/bookings/pending', async (req, res) => {
-  try {
-    // Find 'Pending' bookings
-    // 1. Populate 'lab' to get the lab code (e.g. 'CC')
-    // 2. Populate 'createdBy' to get the student's email for notifications
-    const pending = await Booking.find({ status: 'Pending' })
-      .populate('lab')
-      .populate('createdBy', 'email') 
-      .sort({ createdAt: -1 })
-      .lean();
-
-    // Map to a cleaner format
-    const formatted = pending.map(b => ({
-      ...b,
-      labCode: b.lab ? b.lab.code : 'Unknown Lab',
-      creatorEmail: b.createdBy ? b.createdBy.email : 'unknown@test.com'
-    }));
-
+    const pending = await Booking.find({ status: 'Pending' }).populate('lab').populate('createdBy','email').sort({ createdAt: -1 }).lean();
+    const formatted = pending.map(b => ({...b, labCode: b.lab?.code, creatorEmail: b.createdBy?.email}));
     res.json({ pending: formatted });
-  } catch (err) {
-    console.error(err);
-    res.status(500).json({ error: 'server error' });
-  }
 });
 
-// ------------------------------------
-// APPROVE BOOKING
-// ------------------------------------
-router.put('/bookings/:id/approve', async (req, res) => {
-  try {
-    // We need to populate createdBy to get the email address
-    const booking = await Booking.findById(req.params.id).populate('createdBy');
-    
-    if (!booking) return res.status(404).json({ error: 'not found' });
+router.get('/bookings/history', async (req, res) => {
+    const history = await Booking.find({ status: { $ne: 'Pending' } }).populate('lab').populate('createdBy', 'name email').sort({ updatedAt: -1 }).limit(50).lean();
+    const formatted = history.map(b => ({...b, labCode: b.lab?.code, creatorName: b.createdBy?.name, creatorEmail: b.createdBy?.email}));
+    res.json({ history: formatted });
+});
 
+router.put('/bookings/:id/approve', async (req, res) => {
+    const booking = await Booking.findById(req.params.id).populate('createdBy');
+    if(!booking) return res.status(404).json({error:'not found'});
     booking.status = 'Approved';
     await booking.save();
+    if(booking.createdBy?.email) sendMail(booking.createdBy.email, 'Approved', 'Your booking was approved.');
+    await Log.create({ action: 'AdminApprovedBooking', user: req.user.id, meta: { bookingId: booking._id } });
+    res.json({message:'Approved'});
+});
 
-    // ✅ SEND EMAIL TO STUDENT
-    if (booking.createdBy && booking.createdBy.email) {
-      sendMail(
-        booking.createdBy.email,
-        'Booking Approved! ✅',
-        `Great news! Your booking for ${booking.date} (Period ${booking.period}) has been APPROVED.`
-      );
-    }
+router.put('/bookings/:id/reject', async (req, res) => {
+    const { reason } = req.body;
+    const booking = await Booking.findById(req.params.id).populate('createdBy');
+    if(!booking) return res.status(404).json({error:'not found'});
+    booking.status = 'Rejected';
+    booking.adminReason = reason;
+    await booking.save();
+    if(booking.createdBy?.email) sendMail(booking.createdBy.email, 'Rejected', `Booking rejected: ${reason}`);
+    await Log.create({ action: 'AdminRejectedBooking', user: req.user.id, meta: { bookingId: booking._id } });
+    res.json({message:'Rejected'});
+});
 
-    // Log the action
-    await Log.create({
-      action: 'AdminApprovedBooking',
-      user: req.user.id,
-      meta: { bookingId: booking._id }
-    });
+// ------------------------------------
+// ✅ NEW: EXPORT CSV
+// ------------------------------------
+router.get('/export-csv', async (req, res) => {
+  try {
+    const bookings = await Booking.find().populate('lab').populate('createdBy', 'name email').sort({ date: -1 }).lean();
+    
+    // Manually build CSV string to avoid external dependencies
+    const header = 'Date,Period,Lab,User,Email,Role,Purpose,Status,Type\n';
+    const rows = bookings.map(b => {
+      const safe = (text) => `"${(text || '').replace(/"/g, '""')}"`; // Escape quotes
+      return [
+        b.date,
+        b.period,
+        b.lab?.code || 'Unknown',
+        safe(b.createdBy?.name || 'Unknown'),
+        safe(b.createdBy?.email || 'Unknown'),
+        b.role,
+        safe(b.purpose),
+        b.status,
+        b.type || 'Regular'
+      ].join(',');
+    }).join('\n');
 
-    res.json({ message: 'Approved' });
-  } catch (e) {
-    console.error(e);
-    res.status(500).json({ error: 'server error' });
+    res.header('Content-Type', 'text/csv');
+    res.attachment('labsync_report.csv');
+    return res.send(header + rows);
+
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'Export failed' });
   }
 });
 
 // ------------------------------------
-// REJECT BOOKING
+// ✅ NEW: MANAGE ANNOUNCEMENTS
 // ------------------------------------
-router.put('/bookings/:id/reject', async (req, res) => {
+router.post('/announcements', async (req, res) => {
   try {
-    const { reason } = req.body;
-    
-    // Populate createdBy to get email
-    const booking = await Booking.findById(req.params.id).populate('createdBy');
+    const { message, type } = req.body;
+    await Announcement.create({ message, type, createdBy: req.user.id });
+    res.json({ message: 'Announcement posted' });
+  } catch (err) { res.status(500).json({ error: 'Error posting announcement' }); }
+});
 
-    if (!booking) return res.status(404).json({ error: 'not found' });
+router.delete('/announcements/:id', async (req, res) => {
+  try {
+    await Announcement.findByIdAndDelete(req.params.id);
+    res.json({ message: 'Deleted' });
+  } catch (err) { res.status(500).json({ error: 'Error deleting' }); }
+});
 
-    booking.status = 'Rejected';
-    booking.adminReason = reason || 'Rejected';
-    await booking.save();
+// ------------------------------------
+// USER & BOOKING MANAGEMENT
+// ------------------------------------
+router.delete('/bookings/:id', async (req, res) => {
+    const booking = await Booking.findById(req.params.id).populate('createdBy').populate('lab');
+    if(!booking) return res.status(404).json({error:'Not found'});
+    if(booking.createdBy?.email) sendMail(booking.createdBy.email, 'Cancelled', 'Your booking was cancelled by Admin.');
+    await Booking.deleteOne({_id:booking._id});
+    res.json({message:'Cancelled'});
+});
 
-    // ✅ SEND EMAIL TO STUDENT
-    if (booking.createdBy && booking.createdBy.email) {
-      sendMail(
-        booking.createdBy.email,
-        'Booking Rejected ❌',
-        `Your booking for ${booking.date} (Period ${booking.period}) was REJECTED.\n\nReason: ${reason}`
-      );
-    }
+router.get('/users', async (req, res) => {
+    const users = await User.find().select('-password');
+    res.json({users});
+});
 
-    // Log the action
-    await Log.create({
-      action: 'AdminRejectedBooking',
-      user: req.user.id,
-      meta: { bookingId: booking._id, reason: booking.adminReason }
-    });
+router.get('/users/:id/bookings', async (req, res) => {
+    const bookings = await Booking.find({createdBy:req.params.id}).populate('lab','code').sort({date:-1});
+    res.json({bookings});
+});
 
-    res.json({ message: 'Rejected' });
-  } catch (e) {
-    console.error(e);
-    res.status(500).json({ error: 'server error' });
-  }
+router.get('/stats', async (req, res) => {
+    const totalUsers = await User.countDocuments();
+    const totalBookings = await Booking.countDocuments();
+    const bookingsByLab = await Booking.aggregate([{ $lookup: { from: 'labs', localField: 'lab', foreignField: '_id', as: 'labInfo' } }, { $unwind: '$labInfo' }, { $group: { _id: '$labInfo.code', count: { $sum: 1 } } }]);
+    const bookingsByRole = await Booking.aggregate([{ $group: { _id: '$role', count: { $sum: 1 } } }]);
+    res.json({ totalUsers, totalBookings, bookingsByLab, bookingsByRole, topUser: {_id:'Admin',count:0} });
 });
 
 module.exports = router;
