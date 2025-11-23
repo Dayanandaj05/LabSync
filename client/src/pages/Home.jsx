@@ -6,12 +6,14 @@ import BookingModal from "../components/BookingModal.jsx";
 import LogsViewer from "../components/LogsViewer.jsx"; 
 import LogoutButton from "../components/LogoutButton.jsx";
 import DateSelector from "../components/DateSelector.jsx"; 
+import { getLocalToday } from "../utils/dateHelpers.js"; // ✅ Import Helper
 
 export default function Home() {
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
   
-  const initialDate = searchParams.get("date") || new Date().toISOString().slice(0, 10);
+  // ✅ FIX: Use Local Date Helper
+  const initialDate = searchParams.get("date") || getLocalToday();
   const [date, setDate] = useState(initialDate);
 
   const [gridData, setGridData] = useState({ labs: [], schedule: {} });
@@ -22,8 +24,8 @@ export default function Home() {
 
   const user = JSON.parse(localStorage.getItem("user") || "null");
 
-  // ✅ CHECK IF DATE IS IN PAST
-  const todayStr = new Date().toISOString().slice(0, 10);
+  // ✅ FIX: Strict Past Date Check
+  const todayStr = getLocalToday();
   const isPast = date < todayStr;
 
   const loadData = async (isBackground = false) => {
@@ -50,8 +52,7 @@ export default function Home() {
   }, [date]);
 
   const handleSlotClick = (lab, period, existingBooking = null) => {
-    // ✅ STRICT BLOCK FOR PAST DATES
-    if (isPast) return;
+    if (isPast) return; // Block click on past dates
 
     if (!user) {
       if (confirm("You must be logged in to book a slot. Go to login?")) navigate("/login");
@@ -113,7 +114,6 @@ export default function Home() {
       <div className="relative min-h-[300px]">
         {isInitialLoading && <div className="absolute inset-0 bg-white/80 backdrop-blur-sm z-10 flex items-center justify-center rounded-xl"><div className="text-gray-500 text-sm animate-pulse font-semibold">Loading Schedule...</div></div>}
         
-        {/* ✅ Pass isReadOnly (isPast) to Grid */}
         <TimetableGrid 
           gridData={gridData} 
           onSlotClick={handleSlotClick} 

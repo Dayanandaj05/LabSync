@@ -2,26 +2,38 @@ import React, { useState } from "react";
 
 export default function TestCalendarModal({ tests = [], onClose }) {
   const [selectedDate, setSelectedDate] = useState(null);
-  const [viewDate, setViewDate] = useState(new Date()); // ✅ Track current month view
+  
+  // ✅ FIX 1: Initialize viewDate using Local Time (not UTC default)
+  const [viewDate, setViewDate] = useState(() => {
+    const d = new Date();
+    d.setHours(0, 0, 0, 0);
+    return d;
+  });
 
-  // Get unique dates that have tests
+  // Get unique dates that have tests (Strings from DB: "YYYY-MM-DD")
   const testDates = [...new Set(tests.map(t => t.date))];
 
-  // Calendar Logic
   const year = viewDate.getFullYear();
   const month = viewDate.getMonth();
   const monthName = viewDate.toLocaleString('default', { month: 'long', year: 'numeric' });
   
+  // ✅ FIX 2: Calculate days in month using standard JS Date (Safe for Local Time)
   const daysInMonth = new Date(year, month + 1, 0).getDate();
-  const firstDayIndex = new Date(year, month, 1).getDay(); // 0 = Sun, 1 = Mon...
+  
+  // ✅ FIX 3: Calculate start day index (0=Sun, 1=Mon...)
+  const firstDayIndex = new Date(year, month, 1).getDay();
 
   // Create empty slots for alignment
   const blanks = Array.from({ length: firstDayIndex }, (_, i) => null);
+  
+  // ✅ FIX 4: Generate Date Strings MANUALLY (No Timezone Shifts!)
   const days = Array.from({ length: daysInMonth }, (_, i) => {
-    const d = new Date(year, month, i + 1);
-    // Handle Timezone offset issues by forcing ISO string logic safely
-    const offset = d.getTimezoneOffset() * 60000; 
-    return new Date(d.getTime() - offset).toISOString().slice(0, 10);
+    const dayVal = i + 1;
+    // Format: YYYY-MM-DD
+    // Ensure month+1 because JS months are 0-indexed
+    const mStr = String(month + 1).padStart(2, '0');
+    const dStr = String(dayVal).padStart(2, '0');
+    return `${year}-${mStr}-${dStr}`;
   });
 
   const calendarGrid = [...blanks, ...days];
@@ -33,6 +45,16 @@ export default function TestCalendarModal({ tests = [], onClose }) {
     setViewDate(newDate);
     setSelectedDate(null);
   };
+
+  // Helper to check if a date string is Today
+  const getLocalTodayStr = () => {
+    const d = new Date();
+    const y = d.getFullYear();
+    const m = String(d.getMonth() + 1).padStart(2, '0');
+    const day = String(d.getDate()).padStart(2, '0');
+    return `${y}-${m}-${day}`;
+  };
+  const todayStr = getLocalTodayStr();
 
   return (
     <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50 px-4 animate-fade-in">
@@ -62,8 +84,8 @@ export default function TestCalendarModal({ tests = [], onClose }) {
 
               const hasTest = testDates.includes(dateStr);
               const isSelected = selectedDate === dateStr;
-              const dayNum = parseInt(dateStr.slice(-2));
-              const isToday = dateStr === new Date().toISOString().slice(0, 10);
+              const dayNum = parseInt(dateStr.slice(-2)); // Grab last 2 digits
+              const isToday = dateStr === todayStr;
 
               return (
                 <button
@@ -72,7 +94,7 @@ export default function TestCalendarModal({ tests = [], onClose }) {
                   disabled={!hasTest}
                   className={`h-12 rounded-xl text-sm font-bold transition-all relative flex items-center justify-center border-2 ${
                     isSelected ? 'bg-indigo-600 text-white border-indigo-600 shadow-lg scale-110 z-10' :
-                    hasTest ? 'bg-white text-indigo-700 border-indigo-200 hover:border-indigo-400 shadow-sm' : 
+                    hasTest ? 'bg-white text-indigo-700 border-indigo-200 hover:border-indigo-400 shadow-sm cursor-pointer' : 
                     'text-slate-300 border-transparent bg-slate-50/50 cursor-default'
                   } ${isToday && !isSelected && !hasTest ? 'border-blue-200 text-blue-400' : ''}`}
                 >

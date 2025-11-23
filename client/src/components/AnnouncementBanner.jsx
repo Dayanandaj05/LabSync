@@ -1,68 +1,62 @@
 import React, { useEffect, useState } from "react";
 import API from "../services/api";
 import TestCalendarModal from "./TestCalendarModal.jsx";
+import { getLocalToday, getNextWeek } from "../utils/dateHelpers.js"; // ✅ Helper Import
 
 export default function AnnouncementBanner() {
   const [announcements, setAnnouncements] = useState([]);
   const [events, setEvents] = useState([]); 
   const [showCalendar, setShowCalendar] = useState(false);
-  
-  // ✅ Cycling State
   const [msgIndex, setMsgIndex] = useState(0);
   const [fade, setFade] = useState(true);
 
   useEffect(() => {
     API.get("/api/public/announcements").then((res) => setAnnouncements(res.data.announcements || []));
-    API.get("/api/public/upcoming-tests").then((res) => setEvents(res.data.tests || []));
+    API.get("/api/public/upcoming-tests").then((res) => {
+        // console.log("FETCHED EVENTS:", res.data.tests); // Uncomment to debug
+        setEvents(res.data.tests || []);
+    });
   }, []);
 
-  // ✅ Cycle Logic: Change message every 4 seconds if > 1 announcement
   useEffect(() => {
     if (announcements.length <= 1) return;
     const interval = setInterval(() => {
-      setFade(false); // Fade out
+      setFade(false); 
       setTimeout(() => {
         setMsgIndex((prev) => (prev + 1) % announcements.length);
-        setFade(true); // Fade in
-      }, 300); // Wait for fade out
+        setFade(true); 
+      }, 300); 
     }, 4000); 
     return () => clearInterval(interval);
   }, [announcements]);
 
-  if (announcements.length === 0 && events.length === 0) {
-      return <div className="bg-indigo-900 text-white text-center py-2 text-xs font-medium opacity-90">👋 Welcome to LabSync.</div>;
-  }
+  // ✅ FIXED DATE LOGIC
+  const todayStr = getLocalToday();
+  const nextWeekStr = getNextWeek();
 
-  // --- PILL PRIORITY LOGIC ---
-  const today = new Date();
-  today.setHours(0,0,0,0);
-  const nextWeek = new Date(today);
-  nextWeek.setDate(today.getDate() + 7);
+  // ✅ Simple String Comparison
+  const futureEvents = events.filter(e => e.date >= todayStr);
+  const isThisWeek = (dateStr) => dateStr >= todayStr && dateStr <= nextWeekStr;
 
-  const isThisWeek = (dStr) => {
-    const d = new Date(dStr);
-    return d >= today && d < nextWeek;
-  };
-
-  const futureEvents = events.filter(e => new Date(e.date) >= today);
-
-  // 1. High Priority: Tests This Week
   const testsThisWeek = futureEvents.filter(e => ['Test','Exam'].includes(e.type) && isThisWeek(e.date));
-
-  // 2. High Priority: Projects/Workshops This Week
   const projectsThisWeek = futureEvents.filter(e => ['Project Review','Workshop'].includes(e.type) && isThisWeek(e.date));
-
-  // 3. Custom Banner Events (Limit to 2)
+  
   const customEvents = futureEvents
     .filter(e => e.showInBanner && !['Test','Exam','Project Review','Workshop'].includes(e.type))
     .slice(0, 2);
+
+  const hasPills = testsThisWeek.length > 0 || projectsThisWeek.length > 0 || customEvents.length > 0;
+  
+  if (announcements.length === 0 && !hasPills) {
+      return <div className="bg-indigo-900 text-white text-center py-2 text-xs font-medium opacity-90">👋 Welcome to LabSync.</div>;
+  }
 
   const currentMsg = announcements.length > 0 ? announcements[msgIndex] : null;
 
   return (
     <>
       <div className="bg-indigo-900 text-white shadow-md relative z-30 transition-colors duration-500"
-           style={{ backgroundColor: currentMsg?.type === 'Warning' ? '#7f1d1d' : '#312e81' }}> {/* Red for Warning, Indigo for Info */}
+           style={{ backgroundColor: currentMsg?.type === 'Warning' ? '#7f1d1d' : '#312e81' }}> 
         
         <div className="max-w-7xl mx-auto px-4 py-2 flex flex-col md:flex-row items-center justify-between gap-3 text-sm">
           
@@ -78,7 +72,6 @@ export default function AnnouncementBanner() {
               {currentMsg ? currentMsg.message : "Check the schedule below."}
             </div>
             
-            {/* Dots indicator for multiple messages */}
             {announcements.length > 1 && (
                <div className="flex gap-1">
                  {announcements.map((_, i) => (
@@ -91,7 +84,6 @@ export default function AnnouncementBanner() {
           {/* RIGHT: Priority Pills */}
           <div className="flex items-center gap-2 shrink-0 w-full md:w-auto justify-between md:justify-end overflow-x-auto no-scrollbar">
             
-            {/* 1. TESTS (This Week) */}
             {testsThisWeek.length > 0 && (
               <button onClick={() => setShowCalendar(true)}
                 className="text-[10px] flex items-center bg-purple-900/50 border border-purple-400/50 px-3 py-1 rounded-full whitespace-nowrap hover:bg-purple-800 transition"
@@ -102,7 +94,6 @@ export default function AnnouncementBanner() {
               </button>
             )}
 
-            {/* 2. PROJECTS (This Week) */}
             {projectsThisWeek.length > 0 && (
               <button onClick={() => setShowCalendar(true)}
                 className="text-[10px] flex items-center bg-orange-900/50 border border-orange-400/50 px-3 py-1 rounded-full whitespace-nowrap hover:bg-orange-800 transition"
@@ -113,12 +104,13 @@ export default function AnnouncementBanner() {
               </button>
             )}
 
-            {/* 3. CUSTOM EVENTS */}
             {customEvents.map(evt => {
                let colorStyle = "bg-blue-900/50 border-blue-500/50 text-blue-200";
                let dotColor = "bg-blue-400";
                if(evt.bannerColor === 'pink') { colorStyle = "bg-pink-900/50 border-pink-500/50 text-pink-200"; dotColor = "bg-pink-400"; }
                if(evt.bannerColor === 'green') { colorStyle = "bg-emerald-900/50 border-emerald-500/50 text-emerald-200"; dotColor = "bg-emerald-400"; }
+               if(evt.bannerColor === 'orange') { colorStyle = "bg-orange-900/50 border-orange-500/50 text-orange-200"; dotColor = "bg-orange-400"; }
+               if(evt.bannerColor === 'red') { colorStyle = "bg-red-900/50 border-red-500/50 text-red-200"; dotColor = "bg-red-400"; }
                
                return (
                   <button key={evt._id} onClick={() => setShowCalendar(true)}

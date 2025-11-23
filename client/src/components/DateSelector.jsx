@@ -1,30 +1,34 @@
 import React, { useEffect, useState, useRef } from "react";
 import API from "../services/api";
+import { getLocalToday } from "../utils/dateHelpers.js"; // ✅ Import
 
 export default function DateSelector({ selectedDate, onSelect }) {
   const [statusMap, setStatusMap] = useState({});
-  // ✅ STATE: Holds today's date, updates every 60s
-  const [todayStr, setTodayStr] = useState(new Date().toISOString().slice(0, 10)); 
+  const [todayStr, setTodayStr] = useState(getLocalToday()); // ✅ Use Helper
   const scrollRef = useRef(null);
   const todayRef = useRef(null);
 
-  // ✅ INTERVAL: Update "Today" reference every minute
   useEffect(() => {
     const interval = setInterval(() => {
-      const newToday = new Date().toISOString().slice(0, 10);
+      const newToday = getLocalToday();
       if (newToday !== todayStr) setTodayStr(newToday);
     }, 60000); 
     return () => clearInterval(interval);
   }, [todayStr]);
 
-  // Generate Date Range (-30 to +30 days) based on dynamic todayStr
-  const todayObj = new Date(todayStr); 
+  // Generate Date Range using manual date construction to avoid UTC
+  const todayObj = new Date(); 
   todayObj.setHours(0, 0, 0, 0);
 
   const days = Array.from({ length: 61 }, (_, i) => {
     const d = new Date(todayObj);
-    d.setDate(todayObj.getDate() + (i - 30)); 
-    return d.toISOString().slice(0, 10);
+    d.setDate(d.getDate() + (i - 30)); 
+    
+    // ✅ FORCE LOCAL FORMAT
+    const year = d.getFullYear();
+    const month = String(d.getMonth() + 1).padStart(2, '0');
+    const day = String(d.getDate()).padStart(2, '0');
+    return `${year}-${month}-${day}`;
   });
 
   useEffect(() => {
@@ -33,7 +37,6 @@ export default function DateSelector({ selectedDate, onSelect }) {
       .then(res => setStatusMap(res.data.statusMap || {}))
       .catch(err => console.error(err));
 
-    // Scroll to today on load
     setTimeout(() => {
       if (todayRef.current && scrollRef.current) {
         const container = scrollRef.current;
@@ -42,7 +45,7 @@ export default function DateSelector({ selectedDate, onSelect }) {
         container.scrollTo({ left: scrollPos, behavior: 'smooth' });
       }
     }, 100);
-  }, [todayStr]); // Re-fetch/Re-scroll if day rolls over
+  }, [todayStr]);
 
   const handleWheel = (e) => {
     if (scrollRef.current) scrollRef.current.scrollLeft += e.deltaY;
@@ -66,7 +69,7 @@ export default function DateSelector({ selectedDate, onSelect }) {
             const dayNum = dateObj.getDate();
             
             const isSelected = selectedDate === dateStr;
-            const isToday = dateStr === todayStr; // Check against dynamic state
+            const isToday = dateStr === todayStr; 
             
             const info = statusMap[dateStr] || { hasExam: false, hasReview: false, hasMaintenance: false, count: 0 };
             const isFull = info.count > 20; 

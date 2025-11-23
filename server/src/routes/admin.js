@@ -37,18 +37,40 @@ router.delete('/bookings/:id', async (req, res) => {
     const booking = await Booking.findById(req.params.id).populate('createdBy').populate('lab'); 
     if (!booking) return res.status(404).json({ error: 'Booking not found' });
 
+    // 1. Notify the user being cancelled
     if (booking.createdBy?.email) {
       sendMail(
         booking.createdBy.email,
         'Booking Cancelled ⚠️',
-        `Your booking for ${booking.lab?.code || 'Lab'} on ${booking.date} was cancelled by an Admin.`
+        `Your booking for ${booking.lab?.code || 'Lab'} on ${booking.date} (Period ${booking.period}) was cancelled by Admin.`
       );
     }
 
+    // 2. Capture details before delete to find replacements
+    const { lab, date, period } = booking;
+
+    // 3. Delete the booking
     await Booking.deleteOne({ _id: booking._id });
-    await Log.create({ action: 'AdminCancelledBooking', user: req.user.id, meta: { bookingId: booking._id } });
-    res.json({ message: 'Booking cancelled successfully' });
+    
+    // 4. Log the action
+    await Log.create({ action: 'AdminCancelledBooking', user: req.user.id, meta: { bookingId: booking._id, lab: lab.code, date, period } });
+
+    // 5. Check for Pending requests on this same slot
+    const pendingReplacement = await Booking.findOne({ 
+        lab: lab._id, 
+        date: date, 
+        period: period, 
+        status: 'Pending' 
+    });
+
+    let message = 'Booking cancelled successfully.';
+    if (pendingReplacement) {
+        message += ` ⚠️ NOTE: There is a Pending request from ${pendingReplacement.creatorName} for this slot. check "Pending" tab.`;
+    }
+
+    res.json({ message });
   } catch (err) {
+    console.error(err);
     res.status(500).json({ error: 'Server error' });
   }
 });
@@ -208,5 +230,47 @@ router.post('/labs/maintenance', async (req, res) => {
         res.json({ message: 'Maintenance Set' });
     } catch (e) { res.status(500).json({error:'err'}); }
 });
+// ------------------------------------
+// EXPORT CSV REPORT
+// ------------------------------------
+router.get('/export-csv', async (req, res) => {
+    try {
+        // Fetch all bookings
+        const bookings = await Booking.find()
+            .populate('lab', 'code')
+            .populate('createdBy', 'name email')
+            .populate('subject', 'code name')
+            .sort({ date: -1, period: 1 })
+            .lean();
 
+        // Define CSV Headers
+        let csv = 'Date,Period,Lab,User,Email,Role,Type,Subject,Purpose,Status\n';
+
+        // Map Data to CSV Rows
+        bookings.forEach(b => {
+            const date = b.date;
+            const period = b.period;
+            const lab = b.lab?.code || 'N/A';
+            const user = b.creatorName || 'Unknown';
+            const email = b.createdBy?.email || 'N/A';
+            const role = b.role;
+            const type = b.type;
+            const subject = b.subject ? `${b.subject.code} - ${b.subject.name}` : 'N/A';
+            // Escape quotes in purpose to prevent CSV breakage
+            const purpose = `"${(b.purpose || '').replace(/"/g, '""')}"`; 
+            const status = b.status;
+
+            csv += `${date},${period},${lab},${user},${email},${role},${type},${subject},${purpose},${status}\n`;
+        });
+
+        // Set Headers for Download
+        res.header('Content-Type', 'text/csv');
+        res.attachment(`LabSync_Report_${new Date().toISOString().split('T')[0]}.csv`);
+        return res.send(csv);
+
+    } catch (err) {
+        console.error(err);
+        res.status(500).send("Error generating CSV");
+    }
+});
 module.exports = router;
