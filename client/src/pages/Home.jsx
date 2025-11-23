@@ -52,15 +52,21 @@ export default function Home() {
   }, [date]);
 
   const handleSlotClick = (lab, period, existingBooking = null) => {
-    if (isPast) return; // Block click on past dates
+      if (isPast) return; // Block past dates
+      
+      // ✅ NEW: Block Maintenance
+      if (lab.isMaintenance) {
+        alert(`⛔ ${lab.name} is under maintenance.\nReason: ${lab.maintenanceReason || "Scheduled Maintenance"}`);
+        return;
+      }
 
-    if (!user) {
-      if (confirm("You must be logged in to book a slot. Go to login?")) navigate("/login");
-      return;
-    }
-    if (existingBooking && user.role !== 'Admin') return;
+      if (!user) {
+        if (confirm("You must be logged in to book a slot. Go to login?")) navigate("/login");
+        return;
+      }
+      if (existingBooking && user.role !== 'Admin') return;
 
-    setSelectedSlot({ labCode: lab.code, labName: lab.name, date, period, existingBooking });
+      setSelectedSlot({ labCode: lab.code, labName: lab.name, date, period, existingBooking });
   };
 
   const handleBookingSubmit = async (payload) => {
