@@ -58,10 +58,12 @@ router.delete('/bookings/:id', async (req, res) => {
 // ------------------------------------
 router.get('/users', async (req, res) => {
   try {
-    // FIX: Ensure classGroup is fetched
-    const users = await User.find().select('-password classGroup').sort({ name: 1 }); 
+    // ✅ FIX: Removed 'classGroup' from select. 
+    // '-password' automatically includes all other fields.
+    const users = await User.find().select('-password').sort({ name: 1 }); 
     res.json({ users });
   } catch (err) {
+    console.error("Error fetching users:", err); // Log exact error to console
     res.status(500).json({ error: 'Server error fetching user list' });
   }
 });
@@ -88,8 +90,9 @@ router.get('/users/:id/bookings', async (req, res) => {
   }
 });
 
-// ... (Other admin routes follow) ...
-
+// ------------------------------------
+// ADMIN HISTORY
+// ------------------------------------
 router.get('/bookings/history', async (req, res) => {
     try {
       const history = await Booking.find({ status: { $ne: 'Pending' } }).populate('lab').populate('createdBy', 'name email').sort({ updatedAt: -1 }).limit(50).lean();
@@ -97,6 +100,9 @@ router.get('/bookings/history', async (req, res) => {
     } catch (err) { res.status(500).json({ error: 'server error' }); }
 });
 
+// ------------------------------------
+// APPROVE / REJECT BOOKING
+// ------------------------------------
 router.put('/bookings/:id/approve', async (req, res) => {
     try {
       const booking = await Booking.findById(req.params.id).populate('createdBy');
@@ -107,12 +113,42 @@ router.put('/bookings/:id/approve', async (req, res) => {
     } catch (e) { res.status(500).json({ error: 'server error' }); }
 });
 
-router.get('/stats', async (req, res) => {
-    // ... (Stats logic)
-    res.json({ totalUsers: 1, totalBookings: 1, bookingsByLab: [], bookingsByRole: [], topUser: {_id:'Admin',count:0} });
+router.put('/bookings/:id/reject', async (req, res) => {
+  try {
+    const { reason } = req.body;
+    const booking = await Booking.findById(req.params.id);
+    if (!booking) return res.status(404).json({ error: 'not found' });
+    booking.status = 'Rejected';
+    booking.adminReason = reason || '';
+    await booking.save();
+    res.json({message:'Rejected'});
+  } catch (e) { res.status(500).json({ error: 'server error' }); }
 });
 
+// ------------------------------------
+// STATS
+// ------------------------------------
+router.get('/stats', async (req, res) => {
+    const totalUsers = await User.countDocuments();
+    const totalBookings = await Booking.countDocuments();
+    
+    // Simple Aggregation for Charts
+    const bookingsByLab = await Booking.aggregate([
+      { $lookup: { from: 'labs', localField: 'lab', foreignField: '_id', as: 'labInfo' } },
+      { $unwind: '$labInfo' },
+      { $group: { _id: '$labInfo.code', count: { $sum: 1 } } }
+    ]);
+
+    const bookingsByRole = await Booking.aggregate([
+      { $group: { _id: '$role', count: { $sum: 1 } } }
+    ]);
+
+    res.json({ totalUsers, totalBookings, bookingsByLab, bookingsByRole });
+});
+
+// ------------------------------------
 // SUBJECTS
+// ------------------------------------
 router.post('/subjects', async (req, res) => {
   try {
     const { code, name } = req.body;
@@ -142,7 +178,9 @@ router.post('/reset-semester', async (req, res) => {
   } catch (err) { res.status(500).json({ error: "Failed" }); }
 });
 
+// ------------------------------------
 // ANNOUNCEMENTS & MAINTENANCE
+// ------------------------------------
 router.post('/announcements', async (req, res) => {
     try {
         const { message, type, daysActive } = req.body;

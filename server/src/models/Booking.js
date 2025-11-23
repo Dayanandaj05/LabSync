@@ -8,10 +8,17 @@ const BookingSchema = new mongoose.Schema({
   creatorName: { type: String },
   role: { type: String, enum: ['Admin','Staff','Student'], default: 'Student' },
   
-  // ✅ UPDATED ENUM
+  // ✅ Subject (Mandatory for Staff)
+  subject: { type: mongoose.Schema.Types.ObjectId, ref: 'Subject', default: null },
+
+  // ✅ Banner Config
+  showInBanner: { type: Boolean, default: false },
+  bannerColor: { type: String, enum: ['pink', 'indigo', 'green', 'orange', 'red', 'blue'], default: 'blue' },
+
+  // ✅ Updated Enum
   type: { 
     type: String, 
-    enum: ['Regular', 'Test', 'Exam', 'Event', 'Project Review', 'Workshop'], 
+    enum: ['Regular', 'Test', 'Exam', 'Event', 'Project Review', 'Workshop', 'Other'], 
     default: 'Regular' 
   }, 
   

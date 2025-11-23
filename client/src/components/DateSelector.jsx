@@ -3,13 +3,23 @@ import API from "../services/api";
 
 export default function DateSelector({ selectedDate, onSelect }) {
   const [statusMap, setStatusMap] = useState({});
+  // ✅ STATE: Holds today's date, updates every 60s
+  const [todayStr, setTodayStr] = useState(new Date().toISOString().slice(0, 10)); 
   const scrollRef = useRef(null);
   const todayRef = useRef(null);
 
-  // 1. Generate Date Range (-30 to +30 days)
-  const todayObj = new Date();
+  // ✅ INTERVAL: Update "Today" reference every minute
+  useEffect(() => {
+    const interval = setInterval(() => {
+      const newToday = new Date().toISOString().slice(0, 10);
+      if (newToday !== todayStr) setTodayStr(newToday);
+    }, 60000); 
+    return () => clearInterval(interval);
+  }, [todayStr]);
+
+  // Generate Date Range (-30 to +30 days) based on dynamic todayStr
+  const todayObj = new Date(todayStr); 
   todayObj.setHours(0, 0, 0, 0);
-  const todayStr = todayObj.toISOString().slice(0, 10);
 
   const days = Array.from({ length: 61 }, (_, i) => {
     const d = new Date(todayObj);
@@ -23,6 +33,7 @@ export default function DateSelector({ selectedDate, onSelect }) {
       .then(res => setStatusMap(res.data.statusMap || {}))
       .catch(err => console.error(err));
 
+    // Scroll to today on load
     setTimeout(() => {
       if (todayRef.current && scrollRef.current) {
         const container = scrollRef.current;
@@ -31,7 +42,7 @@ export default function DateSelector({ selectedDate, onSelect }) {
         container.scrollTo({ left: scrollPos, behavior: 'smooth' });
       }
     }, 100);
-  }, []);
+  }, [todayStr]); // Re-fetch/Re-scroll if day rolls over
 
   const handleWheel = (e) => {
     if (scrollRef.current) scrollRef.current.scrollLeft += e.deltaY;
@@ -45,7 +56,6 @@ export default function DateSelector({ selectedDate, onSelect }) {
       `}</style>
 
       <div className="flex items-center gap-3 bg-white p-2 rounded-2xl shadow-sm border border-slate-200 w-full overflow-hidden relative select-none">
-        
         <div className="absolute left-0 top-0 bottom-0 w-12 bg-gradient-to-r from-white via-white/80 to-transparent z-10 pointer-events-none"></div>
 
         <div ref={scrollRef} onWheel={handleWheel} className="flex gap-2 overflow-x-auto no-scrollbar flex-1 px-2 py-1">
@@ -56,14 +66,12 @@ export default function DateSelector({ selectedDate, onSelect }) {
             const dayNum = dateObj.getDate();
             
             const isSelected = selectedDate === dateStr;
-            const isToday = dateStr === todayStr;
+            const isToday = dateStr === todayStr; // Check against dynamic state
             
             const info = statusMap[dateStr] || { hasExam: false, hasReview: false, hasMaintenance: false, count: 0 };
             const isFull = info.count > 20; 
             
             let statusDot = "bg-green-400"; 
-            
-            // ✅ UPDATED COLORS: Black for Maintenance
             if (info.hasMaintenance) statusDot = "bg-slate-900"; 
             else if (info.hasExam) statusDot = "bg-purple-600";
             else if (info.hasReview) statusDot = "bg-orange-500";
