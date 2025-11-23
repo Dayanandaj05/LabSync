@@ -1,4 +1,18 @@
-# Logs
+# --- Dependencies ---
+node_modules/
+
+# --- Environment Variables (CRITICAL) ---
+.env
+.env.local
+.env.*.local
+client/.env
+server/.env
+
+# --- Build Outputs ---
+dist/
+build/
+
+# --- Logs ---
 logs
 *.log
 npm-debug.log*
@@ -7,18 +21,15 @@ yarn-error.log*
 pnpm-debug.log*
 lerna-debug.log*
 
-node_modules
-dist
-dist-ssr
-*.local
-
-# Editor directories and files
-.vscode/*
-!.vscode/extensions.json
-.idea
+# --- OS & Editor Junk ---
 .DS_Store
+.vscode/
+.idea/
 *.suo
 *.ntvs*
 *.njsproj
 *.sln
 *.sw?
+
+# --- Project Specific ---
+server_clean.zip
