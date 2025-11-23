@@ -33,6 +33,7 @@ export default function AdminDashboard() {
   const [mEnd, setMEnd] = useState("");
   const [mReason, setMReason] = useState("");
 
+  
   const fetchData = async () => {
     if (!token) return;
     try {
@@ -146,6 +147,9 @@ export default function AdminDashboard() {
   const labChartData = stats ? stats.bookingsByLab.map(l => ({ label: l._id, value: l.count })) : [];
   const roleChartData = stats ? stats.bookingsByRole.map(r => ({ label: r._id, value: r.count })) : [];
 
+  const subjectChartData = stats && stats.bookingsBySubject 
+    ? stats.bookingsBySubject.map(s => ({ label: s._id, value: s.count })) // Using Subject Code (e.g. CS101) as label
+    : [];
   return (
     <div className="flex flex-col h-[calc(100vh-64px)] overflow-hidden bg-slate-50 font-sans text-slate-800">
       
@@ -373,12 +377,38 @@ export default function AdminDashboard() {
 
           {/* TAB: ANALYTICS (Charts) */}
           {activeTab === 'analytics' && stats && (
-             <div className="h-full overflow-y-auto custom-scrollbar">
+             <div className="h-full overflow-y-auto custom-scrollbar p-2">
+               
+               {/* Top Row: Labs & Roles */}
                <div className="grid grid-cols-1 md:grid-cols-2 gap-6 h-64 mb-6">
                   <BarChart title="Lab Usage" data={labChartData} color="green" />
                   <BarChart title="Role Activity" data={roleChartData} color="orange" />
                </div>
-               {/* Add more analytics here later */}
+
+               {/* ✅ NEW: Subject Utilization Chart */}
+               <div className="h-80 mb-6">
+                  <BarChart title="Classes Held per Subject" data={subjectChartData} color="purple" />
+               </div>
+
+               {/* Raw Data Table (Optional, but helpful for context) */}
+               <div className="bg-white rounded-xl border p-6 shadow-sm">
+                  <h3 className="text-sm font-bold text-slate-500 uppercase tracking-wider mb-4">Subject Breakdown</h3>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+                    {stats.bookingsBySubject.map(s => (
+                        <div key={s._id} className="flex justify-between items-center p-3 bg-slate-50 rounded-lg border border-slate-100">
+                            <div>
+                                <div className="font-bold text-indigo-900">{s._id}</div>
+                                <div className="text-[10px] text-slate-500 truncate w-40">{s.name}</div>
+                            </div>
+                            <span className="bg-white px-3 py-1 rounded shadow-sm font-mono font-bold text-slate-700">
+                                {s.count}
+                            </span>
+                        </div>
+                    ))}
+                    {stats.bookingsBySubject.length === 0 && <p className="text-slate-400 text-sm italic">No classes recorded yet.</p>}
+                  </div>
+               </div>
+
              </div>
           )}
 

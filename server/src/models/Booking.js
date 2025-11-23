@@ -2,23 +2,24 @@ const mongoose = require('mongoose');
 
 const BookingSchema = new mongoose.Schema({
   lab: { type: mongoose.Schema.Types.ObjectId, ref: 'Lab', required: true },
-  date: { type: String, required: true }, // YYYY-MM-DD
+  date: { type: String, required: true }, 
   period: { type: Number, required: true },
   createdBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User', default: null },
   creatorName: { type: String },
   role: { type: String, enum: ['Admin','Staff','Student'], default: 'Student' },
   
-  // ✅ Subject (Mandatory for Staff)
   subject: { type: mongoose.Schema.Types.ObjectId, ref: 'Subject', default: null },
 
-  // ✅ Banner Config
   showInBanner: { type: Boolean, default: false },
   bannerColor: { type: String, enum: ['pink', 'indigo', 'green', 'orange', 'red', 'blue'], default: 'blue' },
 
-  // ✅ Updated Enum
+  // ✅ UPDATED ENUM: Added 'Studies', 'Lab Practice', 'Progression'
   type: { 
     type: String, 
-    enum: ['Regular', 'Test', 'Exam', 'Event', 'Project Review', 'Workshop', 'Other'], 
+    enum: [
+        'Regular', 'Test', 'Exam', 'Event', 'Project Review', 'Workshop', 
+        'Placement Preparation', 'Studies', 'Lab Practice', 'Progression', 'Other'
+    ], 
     default: 'Regular' 
   }, 
   

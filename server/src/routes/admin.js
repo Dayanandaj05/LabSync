@@ -148,24 +148,39 @@ router.put('/bookings/:id/reject', async (req, res) => {
 });
 
 // ------------------------------------
-// STATS
+// STATS (Updated with Subject Counts)
 // ------------------------------------
 router.get('/stats', async (req, res) => {
+  try {
     const totalUsers = await User.countDocuments();
     const totalBookings = await Booking.countDocuments();
     
-    // Simple Aggregation for Charts
+    // 1. Lab Usage
     const bookingsByLab = await Booking.aggregate([
       { $lookup: { from: 'labs', localField: 'lab', foreignField: '_id', as: 'labInfo' } },
       { $unwind: '$labInfo' },
       { $group: { _id: '$labInfo.code', count: { $sum: 1 } } }
     ]);
 
+    // 2. Role Activity
     const bookingsByRole = await Booking.aggregate([
       { $group: { _id: '$role', count: { $sum: 1 } } }
     ]);
 
-    res.json({ totalUsers, totalBookings, bookingsByLab, bookingsByRole });
+    // ✅ 3. NEW: Subject Usage (Approved Only)
+    const bookingsBySubject = await Booking.aggregate([
+      { $match: { status: 'Approved', subject: { $ne: null } } }, // Only approved & valid subject
+      { $lookup: { from: 'subjects', localField: 'subject', foreignField: '_id', as: 'subInfo' } },
+      { $unwind: '$subInfo' },
+      { $group: { _id: '$subInfo.code', name: { $first: '$subInfo.name' }, count: { $sum: 1 } } },
+      { $sort: { count: -1 } } // Highest usage first
+    ]);
+
+    res.json({ totalUsers, totalBookings, bookingsByLab, bookingsByRole, bookingsBySubject });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: "Stats failed" });
+  }
 });
 
 // ------------------------------------
