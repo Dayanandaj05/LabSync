@@ -1,3 +1,4 @@
+// server/src/routes/auth.js
 const express = require('express');
 const bcrypt = require('bcrypt');
 const jwt = require('jsonwebtoken');
@@ -44,7 +45,7 @@ router.post('/register', async (req, res) => {
   }
 });
 
-// Login (Keep existing logic)
+// Login
 router.post('/login', async (req, res) => {
   try {
     const { email, password } = req.body;

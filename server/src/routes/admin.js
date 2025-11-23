@@ -249,43 +249,55 @@ router.post('/labs/maintenance', async (req, res) => {
 // EXPORT CSV REPORT
 // ------------------------------------
 router.get('/export-csv', async (req, res) => {
-    try {
-        // Fetch all bookings
-        const bookings = await Booking.find()
-            .populate('lab', 'code')
-            .populate('createdBy', 'name email')
-            .populate('subject', 'code name')
-            .sort({ date: -1, period: 1 })
-            .lean();
+  try {
+    // 1. Fetch all bookings with full details
+    const bookings = await Booking.find()
+      .populate('lab', 'code')
+      .populate('createdBy', 'name email')
+      .populate('subject', 'code name')
+      .sort({ date: -1, period: 1 }) // Sort by Date (Newest First)
+      .lean();
 
-        // Define CSV Headers
-        let csv = 'Date,Period,Lab,User,Email,Role,Type,Subject,Purpose,Status\n';
+    // 2. Define CSV Headers
+    let csv = 'Date,Period,Lab,User Name,User Email,Role,Type,Subject,Purpose,Status,Created At\n';
 
-        // Map Data to CSV Rows
-        bookings.forEach(b => {
-            const date = b.date;
-            const period = b.period;
-            const lab = b.lab?.code || 'N/A';
-            const user = b.creatorName || 'Unknown';
-            const email = b.createdBy?.email || 'N/A';
-            const role = b.role;
-            const type = b.type;
-            const subject = b.subject ? `${b.subject.code} - ${b.subject.name}` : 'N/A';
-            // Escape quotes in purpose to prevent CSV breakage
-            const purpose = `"${(b.purpose || '').replace(/"/g, '""')}"`; 
-            const status = b.status;
+    // 3. Map Data to CSV Rows
+    bookings.forEach(b => {
+      // Handle null/undefined values gracefully
+      const date = b.date || 'N/A';
+      const period = b.period || 'N/A';
+      const lab = b.lab?.code || 'Deleted Lab';
+      const user = b.creatorName || 'Unknown';
+      const email = b.createdBy?.email || 'N/A';
+      const role = b.role || 'N/A';
+      const type = b.type || 'Regular';
+      
+      // Subject: Handle null (e.g. generic student booking)
+      const subject = b.subject ? `${b.subject.code} - ${b.subject.name}` : 'N/A';
+      
+      // Purpose: Escape quotes and wrap in quotes to handle commas inside the text
+      // e.g. "Lab 1, Group A" -> """Lab 1, Group A"""
+      const cleanPurpose = b.purpose ? `"${b.purpose.replace(/"/g, '""')}"` : '""';
+      
+      const status = b.status;
+      const createdAt = b.createdAt ? new Date(b.createdAt).toISOString().slice(0,10) : 'N/A';
 
-            csv += `${date},${period},${lab},${user},${email},${role},${type},${subject},${purpose},${status}\n`;
-        });
+      // Append Row
+      csv += `${date},${period},${lab},${user},${email},${role},${type},${subject},${cleanPurpose},${status},${createdAt}\n`;
+    });
 
-        // Set Headers for Download
-        res.header('Content-Type', 'text/csv');
-        res.attachment(`LabSync_Report_${new Date().toISOString().split('T')[0]}.csv`);
-        return res.send(csv);
+    // 4. Send File
+    const filename = `LabSync_Report_${new Date().toISOString().slice(0,10)}.csv`;
+    
+    res.header('Content-Type', 'text/csv');
+    res.header('Content-Disposition', `attachment; filename="${filename}"`);
+    
+    return res.send(csv);
 
-    } catch (err) {
-        console.error(err);
-        res.status(500).send("Error generating CSV");
-    }
+  } catch (err) {
+    console.error("CSV Export Error:", err);
+    res.status(500).send("Failed to generate CSV report.");
+  }
 });
+
 module.exports = router;

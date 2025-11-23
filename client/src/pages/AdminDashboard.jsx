@@ -2,7 +2,7 @@ import React, { useEffect, useState } from "react";
 import API from "../services/api";
 import { BarChart } from "../components/AdminCharts";
 import { Link } from "react-router-dom";
-
+const API_URL = import.meta.env.VITE_API_URL || "http://localhost:5001";
 export default function AdminDashboard() {
   // Data State
   const [pendingBookings, setPendingBookings] = useState([]);
@@ -198,9 +198,14 @@ export default function AdminDashboard() {
             <Link to="/recurring" className="bg-slate-800 text-white px-3 py-1.5 rounded-lg hover:bg-black transition whitespace-nowrap">
               🔄 Recurrence / Tests
             </Link>
-             <a href="http://localhost:5001/api/admin/export-csv" target="_blank" className="bg-white border border-slate-300 text-slate-700 px-3 py-1.5 rounded-lg hover:bg-slate-50 transition font-bold whitespace-nowrap">
-               ⬇ CSV
-             </a>
+             <a 
+  href={`${import.meta.env.VITE_API_URL || "http://localhost:5001"}/api/admin/export-csv?token=${token}`} 
+  target="_blank" 
+  rel="noopener noreferrer"
+  className="bg-white border border-slate-300 text-slate-700 px-3 py-1.5 rounded-lg hover:bg-slate-50 transition font-bold whitespace-nowrap"
+>
+  ⬇ CSV
+</a>
          </div>
       </div>
 
