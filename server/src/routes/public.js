@@ -137,10 +137,27 @@ router.get('/calendar-status', async (req, res) => {
 });
 
 // ... announcements, logs endpoints stay the same ...
+// ... (previous code)
+
 router.get('/announcements', async (req, res) => {
-    const announcements = await Announcement.find({ active: true }).sort({ createdAt: -1 }).limit(5);
-    res.json({ announcements });
+    try {
+        // ✅ FIX: Filter by Expiry Date
+        const now = new Date();
+        
+        const announcements = await Announcement.find({ 
+            active: true,
+            expiresAt: { $gt: now } // Only show if Expiry is Greater Than Now
+        })
+        .sort({ createdAt: -1 })
+        .limit(5);
+
+        res.json({ announcements });
+    } catch (err) {
+        res.status(500).json({ error: 'Error fetching announcements' });
+    }
 });
+
+// ... (rest of file)
 router.get('/logs', async (req, res) => {
     const logs = await Log.find().sort({ timestamp: -1 }).limit(20).populate('user', 'name').lean();
     res.json({ logs });

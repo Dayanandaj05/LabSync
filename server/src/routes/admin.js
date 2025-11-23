@@ -299,5 +299,45 @@ router.get('/export-csv', async (req, res) => {
     res.status(500).send("Failed to generate CSV report.");
   }
 });
+// ------------------------------------
+// ANNOUNCEMENT MANAGEMENT
+// ------------------------------------
 
+// 1. GET ALL (For Admin Table)
+router.get('/announcements', async (req, res) => {
+  try {
+    const list = await Announcement.find().sort({ createdAt: -1 });
+    res.json({ announcements: list });
+  } catch (e) { res.status(500).json({ error: 'Server error' }); }
+});
+
+// 2. UPDATE (Toggle Active or Change Expiry)
+router.put('/announcements/:id', async (req, res) => {
+  try {
+    const { active, extendDays } = req.body;
+    const update = {};
+    
+    if (active !== undefined) update.active = active;
+    
+    if (extendDays) {
+      const announcement = await Announcement.findById(req.params.id);
+      if (announcement) {
+        const currentExpiry = new Date(announcement.expiresAt);
+        currentExpiry.setDate(currentExpiry.getDate() + parseInt(extendDays));
+        update.expiresAt = currentExpiry;
+      }
+    }
+
+    await Announcement.findByIdAndUpdate(req.params.id, update);
+    res.json({ message: 'Updated successfully' });
+  } catch (e) { res.status(500).json({ error: 'Server error' }); }
+});
+
+// 3. DELETE
+router.delete('/announcements/:id', async (req, res) => {
+  try {
+    await Announcement.findByIdAndDelete(req.params.id);
+    res.json({ message: 'Deleted successfully' });
+  } catch (e) { res.status(500).json({ error: 'Server error' }); }
+});
 module.exports = router;

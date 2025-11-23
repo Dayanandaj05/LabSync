@@ -12,7 +12,7 @@ export default function AnnouncementBanner() {
   const [msgIndex, setMsgIndex] = useState(0);
   const [fade, setFade] = useState(true);
 
-  // 1. Fetch Data
+ // 1. Fetch Data (With Polling)
   useEffect(() => {
     const fetchData = async () => {
       try {
@@ -26,7 +26,13 @@ export default function AnnouncementBanner() {
         console.error("Banner Data Error:", err);
       }
     };
-    fetchData();
+
+    fetchData(); // Initial Load
+
+    // ✅ Poll every 30 seconds to keep banner fresh
+    const pollInterval = setInterval(fetchData, 30000);
+
+    return () => clearInterval(pollInterval);
   }, []);
 
   // 2. Cycle Logic
