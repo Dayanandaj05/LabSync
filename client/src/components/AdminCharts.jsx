@@ -1,7 +1,7 @@
 import React from "react";
 
 export function BarChart({ data, title, color = "blue" }) {
-  // Find max value for scaling
+  // Find max value for scaling, avoid division by zero
   const maxValue = Math.max(...data.map((d) => d.value), 1);
 
   const colorStyles = {
@@ -12,7 +12,7 @@ export function BarChart({ data, title, color = "blue" }) {
   };
 
   return (
-    <div className="bg-white p-6 rounded-2xl shadow-sm border border-slate-200">
+    <div className="bg-white p-6 rounded-2xl shadow-sm border border-slate-200 h-full">
       <h3 className="text-sm font-bold text-slate-500 uppercase tracking-wider mb-6">
         {title}
       </h3>
@@ -50,7 +50,6 @@ export function StatCard({ title, value, icon, color }) {
         <h3 className="text-xs font-bold opacity-80 uppercase tracking-wider">{title}</h3>
         <p className="text-4xl font-extrabold mt-2">{value}</p>
       </div>
-      {/* Decor */}
       <div className="absolute right-0 bottom-0 opacity-10 text-8xl leading-none transform translate-x-2 translate-y-2">
         {icon}
       </div>
