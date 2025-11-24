@@ -20,9 +20,7 @@ export default function Home() {
   const [logs, setLogs] = useState([]); 
   
   // ✅ MULTI-SELECT STATE
-  // Stores array of: { labCode, labName, date, period }
   const [selectedSlots, setSelectedSlots] = useState([]); 
-  // Stores single occupied slot for View/Edit/Waitlist mode
   const [viewingSlot, setViewingSlot] = useState(null);
 
   const [isInitialLoading, setIsInitialLoading] = useState(true);
@@ -57,7 +55,7 @@ export default function Home() {
     return () => socket.disconnect();
   }, [date]);
 
-  // ✅ HANDLE SLOT CLICK (Toggle vs Open)
+  // HANDLE SLOT CLICK
   const handleSlotClick = (lab, period, existingBooking = null) => {
       if (isPast) return; 
       if (lab.isMaintenance) return alert(`⛔ ${lab.name} is under maintenance.`);
@@ -66,13 +64,13 @@ export default function Home() {
         return;
       }
 
-      // SCENARIO 1: OCCUPIED SLOT -> OPEN MODAL IMMEDIATELY (No Multi-select)
+      // 1. Occupied Slot -> View Details (No Multi-select)
       if (existingBooking) {
           setViewingSlot({ labCode: lab.code, labName: lab.name, date, period, existingBooking });
           return;
       }
 
-      // SCENARIO 2: FREE SLOT -> TOGGLE SELECTION
+      // 2. Free Slot -> Toggle Selection
       const slotId = `${lab.code}-${period}`;
       const isSelected = selectedSlots.some(s => `${s.labCode}-${s.period}` === slotId);
 
@@ -83,16 +81,24 @@ export default function Home() {
       }
   };
 
-  // ✅ SUBMIT ALL SELECTED SLOTS
+  // ✅ FIX: SUBMIT LOGIC
   const handleBookingSubmit = async (payload) => {
     try {
       const token = localStorage.getItem("token");
       
-      // We have 2 modes: Single Slot (Waitlist/Override) or Multi-Slot (New Booking)
-      const slotsToBook = viewingSlot ? [viewingSlot] : selectedSlots;
+      let slotsToBook = [];
 
-      // Loop through all slots and book them
-      // Ideally backend supports bulk, but loop is fine for now
+      // Check if we are in "Multi Mode" (triggered by the floating button)
+      if (viewingSlot?.isMulti) {
+          slotsToBook = selectedSlots;
+      } 
+      // Otherwise, we are viewing a single specific slot (Override/Waitlist)
+      else if (viewingSlot) {
+          slotsToBook = [viewingSlot];
+      }
+
+      if (slotsToBook.length === 0) return;
+
       let successCount = 0;
       for (const slot of slotsToBook) {
           await createBooking({
@@ -155,26 +161,26 @@ export default function Home() {
           onSlotClick={handleSlotClick} 
           currentUser={user} 
           isReadOnly={isPast}
-          selectedSlots={selectedSlots} // ✅ Pass selection
+          selectedSlots={selectedSlots} 
         />
       </div>
 
       <LogsViewer logs={logs} />
 
-      {/* ✅ VIEWING OCCUPIED SLOT (Single) */}
-      {viewingSlot && (
+      {/* SINGLE SLOT MODAL (Occupied) */}
+      {viewingSlot && !viewingSlot.isMulti && (
           <BookingModal 
-            slots={[viewingSlot]} // Pass as array for compatibility
+            slots={[viewingSlot]} 
             onClose={() => setViewingSlot(null)} 
             onSubmit={handleBookingSubmit} 
           />
       )}
 
-      {/* ✅ BOOKING SELECTED SLOTS (Multi) */}
+      {/* MULTI-SLOT BUTTON */}
       {selectedSlots.length > 0 && !viewingSlot && (
          <div className="fixed bottom-6 left-1/2 transform -translate-x-1/2 z-50 animate-bounce-in">
             <button 
-                onClick={() => setViewingSlot({ isMulti: true })} // Hack to open modal
+                onClick={() => setViewingSlot({ isMulti: true })} 
                 className="bg-slate-900 text-white px-8 py-3 rounded-full font-bold shadow-2xl hover:bg-black hover:scale-105 transition flex items-center gap-3"
             >
                 <span>✅ Book {selectedSlots.length} Slot{selectedSlots.length > 1 ? 's' : ''}</span>
@@ -182,7 +188,7 @@ export default function Home() {
          </div>
       )}
 
-      {/* ✅ MODAL FOR MULTI-SELECT */}
+      {/* MULTI-SLOT MODAL */}
       {selectedSlots.length > 0 && viewingSlot?.isMulti && (
           <BookingModal 
             slots={selectedSlots} 

@@ -10,7 +10,6 @@ const isPast = (dateStr) => new Date(dateStr) < new Date().setHours(0,0,0,0);
 
 // 1. CREATE BOOKING (Single)
 router.post('/', jwtAuth, async (req, res) => {
-  // ... (Keep existing single booking logic exactly as is) ...
   try {
     const { labCode, date, period, purpose, type, subjectId, showInBanner, bannerColor } = req.body;
 
@@ -55,7 +54,6 @@ router.post('/', jwtAuth, async (req, res) => {
 
 // 2. JOIN WAITLIST
 router.post('/:id/waitlist', jwtAuth, async (req, res) => {
-  // ... (Keep existing logic) ...
   try {
     const booking = await Booking.findById(req.params.id);
     if (!booking) return res.status(404).json({ error: 'Booking not found' });
@@ -67,19 +65,22 @@ router.post('/:id/waitlist', jwtAuth, async (req, res) => {
   } catch (err) { res.status(500).json({ error: 'Waitlist failed' }); }
 });
 
-// 3. RECURRING / BATCH BOOKING (✅ UPDATED)
+// 3. RECURRING / BATCH BOOKING
 router.post('/recurring', jwtAuth, async (req, res) => {
   try {
     if (req.user.role === 'Student') return res.status(403).json({ error: 'Students cannot create bulk bookings' });
 
-    // Support two modes:
-    // 1. "Standard Recurring": One purpose, array of dates/periods (Old way)
-    // 2. "Batch Queue": Array of distinct booking objects (New way for Exams)
-    
     const { batch, labCode, dates, periods, purpose, type, subjectId, showInBanner, bannerColor } = req.body; 
     
-    const lab = await Lab.findOne({ code: labCode || batch?.[0]?.labCode });
-    if (!lab) return res.status(404).json({ error: 'Lab not found' });
+    // ✅ CRITICAL FIX: Check if it's a Batch OR a Regular Recurring request
+    // Previous code failed because it always checked for 'dates' and 'periods'
+    if (!batch && (!dates?.length || !periods?.length)) {
+        return res.status(400).json({ error: 'Invalid data: Missing dates or periods' });
+    }
+
+    if (!batch && req.user.role === 'Staff' && !subjectId) {
+        return res.status(400).json({ error: 'Staff must select a Subject.' });
+    }
 
     let bookingsToProcess = [];
 
@@ -87,17 +88,20 @@ router.post('/recurring', jwtAuth, async (req, res) => {
     if (batch && Array.isArray(batch)) {
         bookingsToProcess = batch.map(item => ({
             labCode: item.labCode,
-            dates: [item.date],
+            dates: [item.date], // Backend needs array
             periods: item.periods,
             purpose: item.purpose,
             type: item.type,
             subjectId: item.subjectId,
-            showInBanner: true, // Exams default to true
+            showInBanner: true, 
             bannerColor: item.type === 'Semester Exam' ? 'red' : 'indigo'
         }));
     } 
     // MODE B: Standard Recurring (Old)
     else {
+        const lab = await Lab.findOne({ code: labCode });
+        if (!lab) return res.status(404).json({ error: 'Lab not found' });
+
         bookingsToProcess.push({
             labCode, dates, periods, purpose, type, subjectId, showInBanner, bannerColor
         });
@@ -151,7 +155,7 @@ router.post('/recurring', jwtAuth, async (req, res) => {
   }
 });
 
-// ... (Keep DELETE and MY HISTORY routes same as before) ...
+// 4. DELETE BOOKING
 router.delete('/:id', jwtAuth, async (req, res) => {
   try {
     const booking = await Booking.findById(req.params.id).populate('lab');
@@ -163,6 +167,7 @@ router.delete('/:id', jwtAuth, async (req, res) => {
   } catch (err) { res.status(500).json({ error: 'Error' }); }
 });
 
+// 5. MY HISTORY
 router.get('/my-history', jwtAuth, async (req, res) => {
   try {
     const bookings = await Booking.find({ createdBy: req.user.id }).populate('lab', 'code').populate('subject', 'code name').sort({ date: -1 });
