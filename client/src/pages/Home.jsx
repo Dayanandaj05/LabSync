@@ -6,13 +6,13 @@ import BookingModal from "../components/BookingModal.jsx";
 import LogsViewer from "../components/LogsViewer.jsx"; 
 import LogoutButton from "../components/LogoutButton.jsx";
 import DateSelector from "../components/DateSelector.jsx"; 
-import { getLocalToday } from "../utils/dateHelpers.js"; // ✅ Import Helper
+import { getLocalToday } from "../utils/dateHelpers.js";
+import { io } from "socket.io-client"; // ✅ Import Socket
 
 export default function Home() {
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
   
-  // ✅ FIX: Use Local Date Helper
   const initialDate = searchParams.get("date") || getLocalToday();
   const [date, setDate] = useState(initialDate);
 
@@ -23,8 +23,6 @@ export default function Home() {
   const [isSyncing, setIsSyncing] = useState(false);
 
   const user = JSON.parse(localStorage.getItem("user") || "null");
-
-  // ✅ FIX: Strict Past Date Check
   const todayStr = getLocalToday();
   const isPast = date < todayStr;
 
@@ -45,16 +43,27 @@ export default function Home() {
     } catch (err) { console.error(err); } finally { setIsInitialLoading(false); setIsSyncing(false); }
   };
 
+  // ✅ SOCKET.IO SETUP
   useEffect(() => {
     loadData(false);
-    const interval = setInterval(() => loadData(true), 10000); 
-    return () => clearInterval(interval);
+    
+    // Connect to Backend Socket
+    const socket = io(import.meta.env.VITE_API_URL || "http://localhost:5001");
+
+    socket.on("connect", () => console.log("🟢 Connected to Socket"));
+    
+    // Listen for updates and reload data instantly
+    socket.on("bookingUpdate", () => {
+      console.log("🔄 Live Update Received");
+      loadData(true);
+    });
+
+    return () => socket.disconnect();
   }, [date]);
 
   const handleSlotClick = (lab, period, existingBooking = null) => {
-      if (isPast) return; // Block past dates
+      if (isPast) return; 
       
-      // ✅ NEW: Block Maintenance
       if (lab.isMaintenance) {
         alert(`⛔ ${lab.name} is under maintenance.\nReason: ${lab.maintenanceReason || "Scheduled Maintenance"}`);
         return;
@@ -64,8 +73,10 @@ export default function Home() {
         if (confirm("You must be logged in to book a slot. Go to login?")) navigate("/login");
         return;
       }
-      if (existingBooking && user.role !== 'Admin') return;
-
+      
+      // ✅ UPDATED: Allow students to click occupied slots to see Waitlist options
+      // Previously: if (existingBooking && user.role !== 'Admin') return;
+      
       setSelectedSlot({ labCode: lab.code, labName: lab.name, date, period, existingBooking });
   };
 
@@ -75,6 +86,7 @@ export default function Home() {
       const res = await createBooking(payload, token);
       alert(res.data?.message || "Request processed.");
       setSelectedSlot(null);
+      // Data reload happens via Socket, but we can do one manual fetch just in case
       loadData(true); 
     } catch (err) {
       alert(err.response?.data?.error || "Booking failed");
@@ -83,7 +95,6 @@ export default function Home() {
 
   return (
     <div className="space-y-6">
-      
       <div className="flex flex-col lg:flex-row justify-between items-end lg:items-center gap-4">
         <div className="w-full lg:flex-1">
           <div className="flex justify-between items-center mb-2 px-1">

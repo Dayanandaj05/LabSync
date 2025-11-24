@@ -13,7 +13,6 @@ const BookingSchema = new mongoose.Schema({
   showInBanner: { type: Boolean, default: false },
   bannerColor: { type: String, enum: ['pink', 'indigo', 'green', 'orange', 'red', 'blue'], default: 'blue' },
 
-  // ✅ UPDATED ENUM: Added 'Studies', 'Lab Practice', 'Progression'
   type: { 
     type: String, 
     enum: [
@@ -31,6 +30,7 @@ const BookingSchema = new mongoose.Schema({
   isRecurring: { type: Boolean, default: false },
   recurrenceId: { type: String }, 
 
+  // ✅ THIS ARRAY MUST EXIST FOR WAITLIST TO WORK
   waitlist: [{
     user: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
     email: { type: String },

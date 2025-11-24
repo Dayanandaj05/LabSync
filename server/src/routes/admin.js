@@ -117,11 +117,24 @@ router.get('/users/:id/bookings', async (req, res) => {
 // ------------------------------------
 router.get('/bookings/history', async (req, res) => {
     try {
-      const history = await Booking.find({ status: { $ne: 'Pending' } }).populate('lab').populate('createdBy', 'name email').sort({ updatedAt: -1 }).limit(50).lean();
-      res.json({ history: history.map(b => ({...b, labCode: b.lab?.code, creatorName: b.createdBy?.name, creatorEmail: b.createdBy?.email})) });
+      const history = await Booking.find({ status: { $ne: 'Pending' } })
+          .populate('lab')
+          .populate('createdBy', 'name email')
+          .sort({ updatedAt: -1 })
+          .limit(50)
+          .lean();
+          
+      res.json({ 
+          history: history.map(b => ({
+              ...b, 
+              labCode: b.lab?.code, 
+              creatorName: b.createdBy?.name, 
+              creatorEmail: b.createdBy?.email,
+              waitlist: b.waitlist || [] // ✅ Ensure waitlist is passed
+          })) 
+      });
     } catch (err) { res.status(500).json({ error: 'server error' }); }
 });
-
 // ------------------------------------
 // APPROVE / REJECT BOOKING
 // ------------------------------------

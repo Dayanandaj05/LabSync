@@ -2,15 +2,13 @@ const express = require('express');
 const router = express.Router();
 const Booking = require('../models/Booking');
 const Lab = require('../models/Lab');
-const Log = require('../models/Log');
 const jwtAuth = require('../middleware/jwtAuth');
 const User = require('../models/User');
-const { sendMail } = require('../utils/mailer');
 const crypto = require('crypto');
 
 const isPast = (dateStr) => new Date(dateStr) < new Date().setHours(0,0,0,0);
 
-// CREATE BOOKING
+// 1. CREATE BOOKING
 router.post('/', jwtAuth, async (req, res) => {
   try {
     const { labCode, date, period, purpose, type, subjectId, showInBanner, bannerColor } = req.body;
@@ -21,12 +19,12 @@ router.post('/', jwtAuth, async (req, res) => {
     const user = await User.findById(req.user.id);
     if (!user || user.status !== 'Approved') return res.status(403).json({ error: 'Account not approved' });
 
-    // ✅ STAFF VALIDATION
     if (user.role === 'Staff' && !subjectId) return res.status(400).json({ error: 'Staff must select a Subject.' });
 
     const lab = await Lab.findOne({ code: labCode });
     if (!lab) return res.status(404).json({ error: 'Lab not found' });
 
+    // Check Maintenance
     const isUnderMaintenance = (lab.maintenanceLog || []).some(m => date >= new Date(m.start).toISOString().slice(0,10) && date <= new Date(m.end).toISOString().slice(0,10));
     if (isUnderMaintenance) return res.status(403).json({ error: `Lab under maintenance.` });
 
@@ -36,9 +34,9 @@ router.post('/', jwtAuth, async (req, res) => {
       if (user.role === 'Admin') {
         await Booking.deleteOne({ _id: existingBooking._id }); // Admin Override
       } else if (user.role === 'Staff' && type === 'Test') {
-        // Allow Conflict Request
+        // Allow Conflict Request for Staff Tests
       } else {
-        return res.status(400).json({ error: 'Slot booked' });
+        return res.status(400).json({ error: 'Slot already booked' });
       }
     }
 
@@ -51,11 +49,41 @@ router.post('/', jwtAuth, async (req, res) => {
       priority: (user.role === 'Admin' ? 3 : user.role === 'Staff' ? 2 : 1)
     });
 
+    // ✅ EMIT SOCKET EVENT to refresh all clients
+    req.app.get('io').emit('bookingUpdate', { labCode, date, period, action: 'create' });
+
     res.json({ message: initialStatus === 'Approved' ? 'Booked!' : 'Request sent.', booking });
-  } catch (err) { res.status(500).json({ error: 'Server error' }); }
+  } catch (err) { 
+    console.error(err);
+    res.status(500).json({ error: 'Server error' }); 
+  }
 });
 
-// RECURRING BOOKING
+// 2. JOIN WAITLIST ROUTE (✅ NEW)
+router.post('/:id/waitlist', jwtAuth, async (req, res) => {
+  try {
+    const booking = await Booking.findById(req.params.id);
+    if (!booking) return res.status(404).json({ error: 'Booking not found' });
+
+    // Check if user is already in waitlist
+    const alreadyWaiting = booking.waitlist.some(w => w.user.toString() === req.user.id);
+    if (alreadyWaiting) return res.status(400).json({ error: 'You are already on the waitlist.' });
+
+    booking.waitlist.push({
+      user: req.user.id,
+      email: req.user.email,
+      requestedAt: new Date()
+    });
+
+    await booking.save();
+    res.json({ message: 'Added to waitlist' });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'Waitlist failed' });
+  }
+});
+
+// 3. RECURRING BOOKING
 router.post('/recurring', jwtAuth, async (req, res) => {
   try {
     if (req.user.role === 'Student') return res.status(403).json({ error: 'Students cannot create bulk bookings' });
@@ -88,22 +116,31 @@ router.post('/recurring', jwtAuth, async (req, res) => {
         successCount++;
       }
     }
+    
+    // ✅ EMIT SOCKET EVENT
+    req.app.get('io').emit('bookingUpdate', { action: 'recurring' });
+    
     res.json({ message: `Processed ${successCount} slots.` });
   } catch (err) { res.status(500).json({ error: 'Server error' }); }
 });
 
-// DELETE BOOKING
+// 4. DELETE BOOKING
 router.delete('/:id', jwtAuth, async (req, res) => {
   try {
     const booking = await Booking.findById(req.params.id).populate('lab');
     if (!booking) return res.status(404).json({ error: 'Not found' });
     if (booking.createdBy.toString() !== req.user.id && req.user.role !== 'Admin') return res.status(403).json({ error: 'Unauthorized' });
+    
     await Booking.deleteOne({ _id: booking._id });
+
+    // ✅ EMIT SOCKET EVENT
+    req.app.get('io').emit('bookingUpdate', { action: 'delete' });
+
     res.json({ message: 'Cancelled' });
   } catch (err) { res.status(500).json({ error: 'Error' }); }
 });
 
-// MY HISTORY
+// 5. MY HISTORY
 router.get('/my-history', jwtAuth, async (req, res) => {
   try {
     const bookings = await Booking.find({ createdBy: req.user.id }).populate('lab', 'code').populate('subject', 'code name').sort({ date: -1 });

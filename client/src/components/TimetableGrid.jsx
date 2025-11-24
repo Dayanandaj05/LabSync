@@ -18,28 +18,30 @@ export default function TimetableGrid({ gridData, onSlotClick, currentUser, isRe
   const isAdmin = currentUser?.role === 'Admin';
 
   const getCellStyle = (cell) => {
-    // ✅ Past Date Styling: Just subtle, not blocking view
+    // 1. Past Date / Read Only -> blocked
     if (isReadOnly && !cell) return "bg-slate-50 cursor-not-allowed"; 
 
+    // 2. Free Slot
     if (!cell) {
-      // If past, don't show hover effects
       if (isReadOnly) return "bg-white";
       return "bg-white hover:bg-emerald-50/60 hover:shadow-[inset_0_0_0_2px_rgba(16,185,129,0.2)] cursor-pointer group";
     }
     
+    // 3. Occupied Slot Logic
     const isMine = currentUser && cell.creatorName === currentUser.name;
     const baseBorder = isMine ? "border-2 border-indigo-500 z-10" : "border-l-4"; 
-    // Admins can click even if it's past? Maybe not for modification, but let's keep standard UI
-    const adminCursor = (isAdmin && !isReadOnly) ? "cursor-pointer hover:opacity-80 hover:shadow-inner" : "cursor-not-allowed";
+    
+    // ✅ FIX: Allow interaction for EVERYONE (Students need to click to Waitlist)
+    // Previously: const adminCursor = (isAdmin && !isReadOnly) ? ... : "cursor-not-allowed";
+    const interactiveCursor = !isReadOnly ? "cursor-pointer hover:opacity-80 hover:shadow-inner" : "cursor-default";
 
-    if (cell.status === "Pending") return `bg-amber-50 border-amber-300 ${adminCursor} ${baseBorder}`;
-    if (cell.role === "Staff") return `bg-purple-50 border-purple-300 ${adminCursor} ${baseBorder}`;
-    return `bg-blue-50 border-blue-300 ${adminCursor} ${baseBorder}`; 
+    if (cell.status === "Pending") return `bg-amber-50 border-amber-300 ${interactiveCursor} ${baseBorder}`;
+    if (cell.role === "Staff") return `bg-purple-50 border-purple-300 ${interactiveCursor} ${baseBorder}`;
+    return `bg-blue-50 border-blue-300 ${interactiveCursor} ${baseBorder}`; 
   };
 
   const getCellContent = (cell) => {
     if (!cell) {
-      // Only show "Book" button if NOT Read Only
       if (isReadOnly) return null;
       return (
         <div className="flex items-center justify-center h-full">
@@ -75,7 +77,6 @@ export default function TimetableGrid({ gridData, onSlotClick, currentUser, isRe
   return (
     <div className="relative">
       
-      {/* ✅ SUBTLE INDICATOR FOR PAST DATES (No Block Overlay) */}
       {isReadOnly && (
         <div className="absolute top-0 right-0 z-20 bg-slate-100 text-slate-400 px-3 py-1 rounded-bl-xl text-[10px] font-bold uppercase tracking-widest border-l border-b border-slate-200 pointer-events-none">
           Past Date • View Only
@@ -110,7 +111,6 @@ export default function TimetableGrid({ gridData, onSlotClick, currentUser, isRe
                     </div>
                   </td>
 
-                  {/* ✅ MAINTENANCE MODE ROW (Blocks booking) */}
                   {lab.isMaintenance ? (
                     <td colSpan={periods.length} className="bg-slate-50 border-slate-200 text-center relative overflow-hidden">
                       <div className="absolute inset-0 opacity-[0.05]" style={{backgroundImage: 'repeating-linear-gradient(45deg, #000 0, #000 10px, transparent 10px, transparent 20px)'}}></div>
@@ -130,8 +130,9 @@ export default function TimetableGrid({ gridData, onSlotClick, currentUser, isRe
                       return (
                         <td
                           key={`${lab.code}-${p}`}
-                          // ✅ PREVENT CLICK IF READ ONLY
-                          onClick={() => !isReadOnly && (!cellData || isAdmin) ? onSlotClick(lab, p, cellData) : null}
+                          // ✅ CRITICAL FIX: Removed "(!cellData || isAdmin)" check.
+                          // Now clicks always fire unless ReadOnly (Past Date).
+                          onClick={() => !isReadOnly ? onSlotClick(lab, p, cellData) : null}
                           className={`h-28 p-1 border-r border-dashed border-gray-100 relative transition-all duration-200 ease-out ${getCellStyle(cellData)}`}
                         >
                           {getCellContent(cellData)}

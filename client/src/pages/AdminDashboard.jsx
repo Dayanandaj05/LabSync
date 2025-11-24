@@ -163,11 +163,18 @@ export default function AdminDashboard() {
   };
 
   const handleCancelBooking = async (bookingId) => {
-    if (!confirm("Cancel this booking?")) return;
+    if (!confirm("Cancel this booking? Waitlisted users will be notified.")) return;
     try {
       await API.delete(`/api/admin/bookings/${bookingId}`, { headers: { Authorization: `Bearer ${token}` } });
-      if (selectedUser) handleViewUser(selectedUser);
-      else fetchData();
+      // ✅ FIX: Reload the correct tab data
+      if (activeTab === 'history') {
+         const historyRes = await API.get("/api/admin/bookings/history", { headers: { Authorization: `Bearer ${token}` } });
+         setBookingHistory(historyRes.data.history || []);
+      } else if (selectedUser) {
+         handleViewUser(selectedUser);
+      } else {
+         fetchData();
+      }
     } catch (err) { alert("Failed"); }
   };
 
@@ -264,20 +271,47 @@ export default function AdminDashboard() {
           )}
 
           {/* TAB: HISTORY */}
-          {activeTab === 'history' && (
-            <div className="bg-white rounded-xl border shadow-sm overflow-hidden flex flex-col h-full">
-              <div className="overflow-auto custom-scrollbar">
-                <table className="min-w-full text-sm text-left">
-                  <thead className="bg-slate-50 text-slate-500 sticky top-0 z-10 shadow-sm"><tr><th className="p-3">Date</th><th className="p-3">User</th><th className="p-3">Details</th><th className="p-3">Status</th><th className="p-3">Action</th></tr></thead>
-                  <tbody className="divide-y">
-                    {bookingHistory.map(b => (
-                      <tr key={b._id} className="hover:bg-slate-50"><td className="p-3 text-xs font-mono text-slate-500">{formatDate(b.updatedAt || b.createdAt)}</td><td className="p-3 font-bold">{b.creatorName}</td><td className="p-3">Lab {b.labCode}, P{b.period} <br/><span className="text-xs text-slate-400">{b.date}</span></td><td className="p-3"><span className={`px-2 py-1 rounded-full text-[10px] font-bold uppercase ${b.status==='Approved'?'bg-emerald-100 text-emerald-700':'bg-red-100 text-red-700'}`}>{b.status}</span></td><td className="p-3"><button onClick={() => handleCancelBooking(b._id)} className="text-red-500 underline text-xs font-bold hover:text-red-700">Cancel</button></td></tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            </div>
-          )}
+{activeTab === 'history' && (
+  <div className="bg-white rounded-xl border shadow-sm overflow-hidden flex flex-col h-full">
+    <div className="overflow-auto custom-scrollbar">
+      <table className="min-w-full text-sm text-left">
+        <thead className="bg-slate-50 text-slate-500 sticky top-0 z-10 shadow-sm">
+           <tr>
+             <th className="p-3">Date</th>
+             <th className="p-3">User</th>
+             <th className="p-3">Details</th>
+             <th className="p-3 text-center">Waitlist</th> {/* ✅ NEW COL */}
+             <th className="p-3">Status</th>
+             <th className="p-3">Action</th>
+           </tr>
+        </thead>
+        <tbody className="divide-y">
+          {bookingHistory.map(b => (
+            <tr key={b._id} className="hover:bg-slate-50">
+              <td className="p-3 text-xs font-mono text-slate-500">{formatDate(b.updatedAt || b.createdAt)}</td>
+              <td className="p-3 font-bold">{b.creatorName}</td>
+              <td className="p-3">Lab {b.labCode}, P{b.period} <br/><span className="text-xs text-slate-400">{b.date}</span></td>
+
+              {/* ✅ NEW WAITLIST CELL */}
+              <td className="p-3 text-center">
+                 {b.waitlist && b.waitlist.length > 0 ? (
+                    <span className="bg-indigo-100 text-indigo-700 px-2 py-1 rounded-full text-xs font-bold shadow-sm">
+                       ⏳ {b.waitlist.length}
+                    </span>
+                 ) : (
+                    <span className="text-slate-300">-</span>
+                 )}
+              </td>
+
+              <td className="p-3"><span className={`px-2 py-1 rounded-full text-[10px] font-bold uppercase ${b.status==='Approved'?'bg-emerald-100 text-emerald-700':'bg-red-100 text-red-700'}`}>{b.status}</span></td>
+              <td className="p-3"><button onClick={() => handleCancelBooking(b._id)} className="text-red-500 underline text-xs font-bold hover:text-red-700">Cancel</button></td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  </div>
+)}
 
           {/* ✅ TAB: ANNOUNCEMENTS (New Control Panel) */}
           {activeTab === 'announcements' && (
