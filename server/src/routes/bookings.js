@@ -8,8 +8,9 @@ const crypto = require('crypto');
 
 const isPast = (dateStr) => new Date(dateStr) < new Date().setHours(0,0,0,0);
 
-// 1. CREATE BOOKING
+// 1. CREATE BOOKING (Single)
 router.post('/', jwtAuth, async (req, res) => {
+  // ... (Keep existing single booking logic exactly as is) ...
   try {
     const { labCode, date, period, purpose, type, subjectId, showInBanner, bannerColor } = req.body;
 
@@ -24,7 +25,6 @@ router.post('/', jwtAuth, async (req, res) => {
     const lab = await Lab.findOne({ code: labCode });
     if (!lab) return res.status(404).json({ error: 'Lab not found' });
 
-    // Check Maintenance
     const isUnderMaintenance = (lab.maintenanceLog || []).some(m => date >= new Date(m.start).toISOString().slice(0,10) && date <= new Date(m.end).toISOString().slice(0,10));
     if (isUnderMaintenance) return res.status(403).json({ error: `Lab under maintenance.` });
 
@@ -32,9 +32,8 @@ router.post('/', jwtAuth, async (req, res) => {
 
     if (existingBooking) {
       if (user.role === 'Admin') {
-        await Booking.deleteOne({ _id: existingBooking._id }); // Admin Override
+        await Booking.deleteOne({ _id: existingBooking._id }); 
       } else if (user.role === 'Staff' && type === 'Test') {
-        // Allow Conflict Request for Staff Tests
       } else {
         return res.status(400).json({ error: 'Slot already booked' });
       }
@@ -49,98 +48,121 @@ router.post('/', jwtAuth, async (req, res) => {
       priority: (user.role === 'Admin' ? 3 : user.role === 'Staff' ? 2 : 1)
     });
 
-    // ✅ EMIT SOCKET EVENT to refresh all clients
     req.app.get('io').emit('bookingUpdate', { labCode, date, period, action: 'create' });
-
     res.json({ message: initialStatus === 'Approved' ? 'Booked!' : 'Request sent.', booking });
-  } catch (err) { 
-    console.error(err);
-    res.status(500).json({ error: 'Server error' }); 
-  }
+  } catch (err) { res.status(500).json({ error: 'Server error' }); }
 });
 
-// 2. JOIN WAITLIST ROUTE (✅ NEW)
+// 2. JOIN WAITLIST
 router.post('/:id/waitlist', jwtAuth, async (req, res) => {
+  // ... (Keep existing logic) ...
   try {
     const booking = await Booking.findById(req.params.id);
     if (!booking) return res.status(404).json({ error: 'Booking not found' });
-
-    // Check if user is already in waitlist
     const alreadyWaiting = booking.waitlist.some(w => w.user.toString() === req.user.id);
     if (alreadyWaiting) return res.status(400).json({ error: 'You are already on the waitlist.' });
-
-    booking.waitlist.push({
-      user: req.user.id,
-      email: req.user.email,
-      requestedAt: new Date()
-    });
-
+    booking.waitlist.push({ user: req.user.id, email: req.user.email, requestedAt: new Date() });
     await booking.save();
     res.json({ message: 'Added to waitlist' });
-  } catch (err) {
-    console.error(err);
-    res.status(500).json({ error: 'Waitlist failed' });
-  }
+  } catch (err) { res.status(500).json({ error: 'Waitlist failed' }); }
 });
 
-// 3. RECURRING BOOKING
+// 3. RECURRING / BATCH BOOKING (✅ UPDATED)
 router.post('/recurring', jwtAuth, async (req, res) => {
   try {
     if (req.user.role === 'Student') return res.status(403).json({ error: 'Students cannot create bulk bookings' });
 
-    const { labCode, dates, periods, purpose, type, subjectId, showInBanner, bannerColor } = req.body; 
+    // Support two modes:
+    // 1. "Standard Recurring": One purpose, array of dates/periods (Old way)
+    // 2. "Batch Queue": Array of distinct booking objects (New way for Exams)
     
-    if (!dates?.length || !periods?.length) return res.status(400).json({ error: 'Invalid data' });
-    if (req.user.role === 'Staff' && !subjectId) return res.status(400).json({ error: 'Staff must select a Subject.' });
+    const { batch, labCode, dates, periods, purpose, type, subjectId, showInBanner, bannerColor } = req.body; 
+    
+    const lab = await Lab.findOne({ code: labCode || batch?.[0]?.labCode });
+    if (!lab) return res.status(404).json({ error: 'Lab not found' });
 
-    const lab = await Lab.findOne({ code: labCode });
-    const recurrenceId = crypto.randomUUID();
-    let successCount = 0;
+    let bookingsToProcess = [];
 
-    for (const date of dates) {
-      const isMaintenance = (lab.maintenanceLog || []).some(m => date >= new Date(m.start).toISOString().slice(0,10) && date <= new Date(m.end).toISOString().slice(0,10));
-      if (isMaintenance) continue;
-
-      for (const period of periods) {
-        const existing = await Booking.findOne({ lab: lab._id, date, period, status: 'Approved' });
-        if (existing) {
-          if (req.user.role === 'Admin') await Booking.deleteOne({ _id: existing._id });
-          else continue;
-        }
-
-        await Booking.create({
-          lab: lab._id, date, period, createdBy: req.user.id, creatorName: req.user.name,
-          role: req.user.role, purpose, type: type || 'Regular', status: req.user.role === 'Admin' ? 'Approved' : 'Pending',
-          isRecurring: true, recurrenceId, subject: subjectId || null, showInBanner: showInBanner || false, bannerColor: bannerColor || 'blue'
+    // MODE A: Batch Queue (New)
+    if (batch && Array.isArray(batch)) {
+        bookingsToProcess = batch.map(item => ({
+            labCode: item.labCode,
+            dates: [item.date],
+            periods: item.periods,
+            purpose: item.purpose,
+            type: item.type,
+            subjectId: item.subjectId,
+            showInBanner: true, // Exams default to true
+            bannerColor: item.type === 'Semester Exam' ? 'red' : 'indigo'
+        }));
+    } 
+    // MODE B: Standard Recurring (Old)
+    else {
+        bookingsToProcess.push({
+            labCode, dates, periods, purpose, type, subjectId, showInBanner, bannerColor
         });
-        successCount++;
-      }
+    }
+
+    let successCount = 0;
+    const recurrenceId = crypto.randomUUID();
+
+    // Process List
+    for (const entry of bookingsToProcess) {
+        const targetLab = await Lab.findOne({ code: entry.labCode });
+        if(!targetLab) continue;
+
+        for (const date of entry.dates) {
+            // Maintenance Check
+            const isMaintenance = (targetLab.maintenanceLog || []).some(m => 
+                date >= new Date(m.start).toISOString().slice(0,10) && 
+                date <= new Date(m.end).toISOString().slice(0,10)
+            );
+            if (isMaintenance) continue;
+
+            for (const period of entry.periods) {
+                // Conflict Check
+                const existing = await Booking.findOne({ lab: targetLab._id, date, period, status: 'Approved' });
+                if (existing) {
+                    if (req.user.role === 'Admin') await Booking.deleteOne({ _id: existing._id });
+                    else continue; // Skip if staff conflict
+                }
+
+                await Booking.create({
+                    lab: targetLab._id, date, period, 
+                    createdBy: req.user.id, creatorName: req.user.name, role: req.user.role, 
+                    purpose: entry.purpose, type: entry.type || 'Regular', 
+                    status: req.user.role === 'Admin' ? 'Approved' : 'Pending',
+                    isRecurring: true, recurrenceId, 
+                    subject: entry.subjectId || null, 
+                    showInBanner: entry.showInBanner || false, 
+                    bannerColor: entry.bannerColor || 'blue'
+                });
+                successCount++;
+            }
+        }
     }
     
-    // ✅ EMIT SOCKET EVENT
     req.app.get('io').emit('bookingUpdate', { action: 'recurring' });
-    
     res.json({ message: `Processed ${successCount} slots.` });
-  } catch (err) { res.status(500).json({ error: 'Server error' }); }
+
+  } catch (err) { 
+      console.error(err);
+      res.status(500).json({ error: 'Server error' }); 
+  }
 });
 
-// 4. DELETE BOOKING
+// ... (Keep DELETE and MY HISTORY routes same as before) ...
 router.delete('/:id', jwtAuth, async (req, res) => {
   try {
     const booking = await Booking.findById(req.params.id).populate('lab');
     if (!booking) return res.status(404).json({ error: 'Not found' });
     if (booking.createdBy.toString() !== req.user.id && req.user.role !== 'Admin') return res.status(403).json({ error: 'Unauthorized' });
-    
     await Booking.deleteOne({ _id: booking._id });
-
-    // ✅ EMIT SOCKET EVENT
     req.app.get('io').emit('bookingUpdate', { action: 'delete' });
-
     res.json({ message: 'Cancelled' });
   } catch (err) { res.status(500).json({ error: 'Error' }); }
 });
 
-// 5. MY HISTORY
 router.get('/my-history', jwtAuth, async (req, res) => {
   try {
     const bookings = await Booking.find({ createdBy: req.user.id }).populate('lab', 'code').populate('subject', 'code name').sort({ date: -1 });

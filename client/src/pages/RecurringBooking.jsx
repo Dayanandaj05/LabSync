@@ -6,23 +6,33 @@ export default function RecurringBooking() {
   const navigate = useNavigate();
   const user = JSON.parse(localStorage.getItem("user") || "{}");
 
+  // Mode State
+  const [mode, setMode] = useState("Regular"); // Regular | Test | Semester Exam
+  
+  // --- COMMON STATE ---
   const [labCode, setLabCode] = useState("CC");
   const [selectedPeriods, setSelectedPeriods] = useState([]); 
-  const [purpose, setPurpose] = useState("");
-  const [type, setType] = useState("Regular");
-  
-  // ✅ Banner & Subject Options
-  const [bannerVisible, setBannerVisible] = useState(false);
-  const [bannerColor, setBannerColor] = useState("indigo");
   const [subjects, setSubjects] = useState([]);
+  
+  // --- REGULAR MODE STATE ---
+  const [purpose, setPurpose] = useState("");
+  const [selectedDay, setSelectedDay] = useState(null);
+  const [generatedDates, setGeneratedDates] = useState([]);
   const [selectedSubject, setSelectedSubject] = useState("");
 
-  // ✅ New Semester Logic
-  const [selectedDay, setSelectedDay] = useState(null); // 1=Mon, 2=Tue...
-  const [manualDate, setManualDate] = useState(""); 
-  const [generatedDates, setGeneratedDates] = useState([]);
+  // --- EXAM BATCH STATE ---
+  const [examDate, setExamDate] = useState("");
+  
+  // Dropdown State logic
+  const [selectedExamType, setSelectedExamType] = useState("");
+  const [customExamName, setCustomExamName] = useState("");
+  
+  const [examQueue, setExamQueue] = useState([]); 
 
-  // Load Subjects if Staff
+  // OPTIONS CONSTANTS
+  const TEST_OPTIONS = ["CA 1", "CA 2", "Other"];
+  const SEMESTER_OPTIONS = ["Semester Practical", "Project Review", "Other"];
+
   useEffect(() => {
     if (user.role === 'Staff') {
        API.get('/api/public/subjects').then(res => setSubjects(res.data.subjects || []));
@@ -31,21 +41,17 @@ export default function RecurringBooking() {
 
   if (!['Admin', 'Staff'].includes(user.role)) return <div className="p-10 text-center text-red-500">Access Denied.</div>;
 
-  // Toggle Period Selection
+  // --- HELPER: PERIODS ---
   const togglePeriod = (p) => {
     setSelectedPeriods(prev => prev.includes(p) ? prev.filter(i => i !== p) : [...prev, p].sort((a,b)=>a-b));
   };
 
-  // ✅ AUTO-GENERATE SEMESTER DATES
+  // --- LOGIC: REGULAR SEMESTER ---
   const handleDaySelect = (dayIndex) => {
      setSelectedDay(dayIndex);
-     
-     // 1. Find next occurrence of this day
      const today = new Date();
      const resultDate = new Date();
      resultDate.setDate(today.getDate() + (dayIndex + 7 - today.getDay()) % 7);
-     
-     // 2. Generate for 20 Weeks (Approx Semester)
      const dates = [];
      for(let i=0; i<20; i++) {
         dates.push(resultDate.toISOString().slice(0, 10));
@@ -54,178 +60,270 @@ export default function RecurringBooking() {
      setGeneratedDates(dates);
   };
 
-  // Manual Date Add (For Tests/Events)
-  const handleAddManualDate = () => {
-     if (!manualDate) return;
-     if (!generatedDates.includes(manualDate)) {
-       setGeneratedDates([...generatedDates, manualDate].sort());
-     }
-     setManualDate("");
+  // --- LOGIC: EXAM QUEUE ---
+  const addToQueue = () => {
+      // 1. Determine Final Name
+      let finalExamName = selectedExamType;
+      if (selectedExamType === "Other") {
+          finalExamName = customExamName.trim();
+      }
+
+      // 2. Validation
+      if(!examDate || selectedPeriods.length === 0 || !finalExamName || (user.role === 'Staff' && !selectedSubject)) {
+          return alert("Please fill all details (Date, Periods, Name, Subject).");
+      }
+
+      const newEntry = {
+          id: Date.now(),
+          labCode,
+          date: examDate,
+          periods: [...selectedPeriods],
+          purpose: `${mode}: ${finalExamName}`, 
+          type: mode, 
+          subjectId: selectedSubject || null,
+          subjectName: subjects.find(s => s._id === selectedSubject)?.name || "N/A"
+      };
+
+      setExamQueue(prev => [...prev, newEntry].sort((a,b) => new Date(a.date) - new Date(b.date)));
+      
+      // 3. Reset Inputs
+      setSelectedPeriods([]);
   };
 
-  const removeDate = (d) => setGeneratedDates(prev => prev.filter(date => date !== d));
+  const removeFromQueue = (id) => {
+      setExamQueue(prev => prev.filter(item => item.id !== id));
+  };
 
+  const handleModeSwitch = (newMode) => {
+      setMode(newMode);
+      setExamQueue([]);
+      setSelectedExamType("");
+      setCustomExamName("");
+  };
+
+  // --- SUBMIT ---
   const handleSubmit = async (e) => {
     e.preventDefault();
-    if (generatedDates.length === 0) return alert("Please select a day or add dates.");
-    if (selectedPeriods.length === 0) return alert("Please select at least one period.");
-    
-    // ✅ Staff Subject Validation
-    if (user.role === 'Staff' && !selectedSubject) return alert("Please select a Subject.");
+    const token = localStorage.getItem("token");
 
     try {
-      const token = localStorage.getItem("token");
-      const res = await API.post('/api/bookings/recurring', {
-        labCode,
-        periods: selectedPeriods, 
-        purpose,
-        type,
-        dates: generatedDates,
-        subjectId: selectedSubject || null,
-        showInBanner: bannerVisible,
-        bannerColor
-      }, { headers: { Authorization: `Bearer ${token}` } });
+        if (mode === 'Regular') {
+            if (generatedDates.length === 0 || selectedPeriods.length === 0) return alert("Incomplete data.");
+            await API.post('/api/bookings/recurring', {
+                labCode, periods: selectedPeriods, purpose, type: 'Regular', dates: generatedDates,
+                subjectId: selectedSubject || null, showInBanner: false
+            }, { headers: { Authorization: `Bearer ${token}` } });
+        } else {
+            if (examQueue.length === 0) return alert("Queue is empty. Add exams first.");
+            await API.post('/api/bookings/recurring', { batch: examQueue }, { headers: { Authorization: `Bearer ${token}` } });
+        }
 
-      alert(res.data.message || "Booking successful!");
-      navigate("/admin");
-    } catch (err) { alert(err.response?.data?.error || "Failed to book"); }
+        alert("Schedule Created Successfully!");
+        navigate("/admin");
+    } catch (err) { alert(err.response?.data?.error || "Failed"); }
   };
 
-  const daysOfWeek = [
-    { name: 'Mon', index: 1 },
-    { name: 'Tue', index: 2 },
-    { name: 'Wed', index: 3 },
-    { name: 'Thu', index: 4 },
-    { name: 'Fri', index: 5 }
-  ];
+  const daysOfWeek = [{ name: 'Mon', index: 1 }, { name: 'Tue', index: 2 }, { name: 'Wed', index: 3 }, { name: 'Thu', index: 4 }, { name: 'Fri', index: 5 }];
 
   return (
-    <div className="max-w-4xl mx-auto p-6">
+    <div className="max-w-5xl mx-auto p-6">
       <div className="bg-white rounded-2xl shadow-xl overflow-hidden border border-slate-200">
-        <div className="bg-slate-900 p-6 text-white flex justify-between items-center">
+        
+        {/* HEADER */}
+        <div className={`${mode === 'Semester Exam' ? 'bg-red-900' : mode === 'Test' ? 'bg-purple-900' : 'bg-slate-900'} p-6 text-white flex justify-between items-center transition-colors duration-500`}>
           <div>
-            <h1 className="text-2xl font-bold">{type === 'Regular' ? '📅 Semester Scheduler' : '📝 Event Scheduler'}</h1>
-            <p className="text-slate-400 text-sm">
-              {type === 'Regular' ? 'Book a slot for the entire semester.' : 'Schedule specific dates for tests or events.'}
+            <h1 className="text-2xl font-bold flex items-center gap-2">
+                {/* ✅ CHANGED HEADING HERE */}
+                {mode === 'Regular' && <span>📅 Book for a Class Test</span>}
+                {mode === 'Test' && <span>📝 Internal / CA Scheduler</span>}
+                {mode === 'Semester Exam' && <span>🎓 Semester Exam Scheduler</span>}
+            </h1>
+            <p className="text-white/70 text-sm mt-1">
+              {mode === 'Regular' ? '' : 'Queue up multiple exams and submit in one batch.'}
             </p>
           </div>
-          <div className="text-4xl opacity-20">🔄</div>
+          <div className="text-4xl opacity-20">
+              {mode === 'Regular' ? '🔄' : '📚'}
+          </div>
         </div>
 
-        <form onSubmit={handleSubmit} className="p-8 space-y-8">
+        <div className="p-8">
           
-          {/* TYPE SELECTOR */}
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-2 border-b pb-6">
-            {['Regular', 'Test', 'Project Review', 'Event'].map(t => (
+          {/* 1. TYPE SELECTOR */}
+          <div className="flex gap-2 mb-8 bg-slate-100 p-1 rounded-xl w-fit">
+            {['Regular', 'Test', 'Semester Exam'].map(t => (
               <button 
                 key={t} 
-                type="button" 
-                onClick={() => { setType(t); setGeneratedDates([]); setSelectedDay(null); }} 
-                className={`py-2 rounded-lg font-bold border text-xs transition-all ${type===t ? 'border-blue-500 bg-blue-50 text-blue-700' : 'border-slate-200 text-slate-500'}`}
+                onClick={() => handleModeSwitch(t)} 
+                className={`px-6 py-2 rounded-lg font-bold text-sm transition-all ${mode===t ? 'bg-white shadow text-slate-900' : 'text-slate-500 hover:text-slate-700'}`}
               >
                 {t}
               </button>
             ))}
           </div>
 
-          {/* CONFIG */}
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-            <div>
-              <label className="block text-sm font-bold text-slate-700 mb-2">Lab & Subject</label>
-              <select value={labCode} onChange={e => setLabCode(e.target.value)} className="w-full p-3 border rounded-lg bg-slate-50 font-bold mb-3">
-                <option value="CC">Computer Center (CC)</option><option value="IS">Information Systems (IS)</option><option value="CAT">CAT Lab</option>
-              </select>
-              
-              {/* ✅ Subject Dropdown */}
-              {user.role === 'Staff' && (
-                 <select required value={selectedSubject} onChange={e => setSelectedSubject(e.target.value)} className="w-full p-3 border border-purple-300 bg-purple-50 rounded-lg font-bold mb-3 focus:ring-2 focus:ring-purple-500 outline-none">
+          <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+            
+            {/* --- LEFT COLUMN: INPUTS --- */}
+            <div className="lg:col-span-1 space-y-6">
+               
+               {/* Lab Selector */}
+               <div>
+                  <label className="block text-xs font-bold text-slate-500 uppercase mb-1">Select Lab</label>
+                  <select value={labCode} onChange={e => setLabCode(e.target.value)} className="w-full p-3 border rounded-lg bg-slate-50 font-bold">
+                    <option value="CC">Computer Center (CC)</option><option value="IS">Information Systems (IS)</option><option value="CAT">CAT Lab</option>
+                  </select>
+               </div>
+
+               {/* Subject Selector (Staff/Admin) */}
+               <div>
+                  <label className="block text-xs font-bold text-slate-500 uppercase mb-1">Subject</label>
+                  <select required value={selectedSubject} onChange={e => setSelectedSubject(e.target.value)} className="w-full p-3 border border-indigo-200 bg-indigo-50/50 rounded-lg font-bold text-indigo-900 outline-none focus:ring-2 focus:ring-indigo-500">
                     <option value="">-- Select Subject --</option>
                     {subjects.map(s => <option key={s._id} value={s._id}>{s.code} - {s.name}</option>)}
-                 </select>
-              )}
-
-              <input type="text" required value={purpose} onChange={e => setPurpose(e.target.value)} placeholder="Description / Title" className="w-full p-3 border rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none" />
-              
-              {/* Banner Options */}
-              {['Event', 'Test', 'Project Review'].includes(type) && (
-                 <div className="flex items-center gap-4 mt-3 bg-slate-50 p-2 rounded border">
-                   <label className="flex items-center gap-2 text-xs font-bold cursor-pointer">
-                     <input type="checkbox" checked={bannerVisible} onChange={e => setBannerVisible(e.target.checked)} /> Show in Banner
-                   </label>
-                   {bannerVisible && (
-                     <select value={bannerColor} onChange={e => setBannerColor(e.target.value)} className="text-xs border rounded p-1">
-                       <option value="indigo">Indigo</option><option value="pink">Pink</option><option value="green">Green</option><option value="red">Red</option>
-                     </select>
-                   )}
-                 </div>
-              )}
-            </div>
-
-            <div>
-              <label className="block text-sm font-bold text-slate-700 mb-2">Select Period(s)</label>
-              <div className="flex flex-wrap gap-2">
-                {[1,2,3,4,5,6,7,8,9,10].map(p => (
-                  <button key={p} type="button" onClick={() => togglePeriod(p)} className={`w-10 h-10 rounded-lg text-sm font-bold border transition-all ${selectedPeriods.includes(p) ? 'bg-indigo-600 text-white shadow-md' : 'bg-white text-slate-500 border-slate-200'}`}>
-                    {p}
-                  </button>
-                ))}
-              </div>
-            </div>
-          </div>
-
-          {/* DATES GENERATION */}
-          <div className="bg-slate-50 p-6 rounded-xl border border-slate-200">
-             
-             {type === 'Regular' ? (
-                // ✅ SEMESTER MODE: Day Picker
-                <div>
-                   <label className="block text-xs font-bold text-slate-500 mb-3 uppercase tracking-wider">Select Weekly Day (Books till End of Semester)</label>
-                   <div className="flex gap-4">
-                      {daysOfWeek.map(day => (
-                         <button 
-                            key={day.name} 
-                            type="button" 
-                            onClick={() => handleDaySelect(day.index)}
-                            className={`flex-1 py-3 rounded-xl border font-bold text-sm transition-all shadow-sm ${
-                               selectedDay === day.index 
-                               ? 'bg-blue-600 text-white border-blue-600 ring-2 ring-blue-200' 
-                               : 'bg-white text-slate-600 hover:bg-slate-100'
-                            }`}
-                         >
-                            {day.name}
-                         </button>
-                      ))}
-                   </div>
-                   {generatedDates.length > 0 && (
-                      <div className="mt-4 text-xs text-slate-500 text-center">
-                         ✅ Generated <span className="font-bold text-slate-800">{generatedDates.length} bookings</span> (from {generatedDates[0]} to {generatedDates[generatedDates.length-1]})
-                      </div>
-                   )}
-                </div>
-             ) : (
-                // ✅ MANUAL MODE: Date Picker
-                <div className="flex flex-col md:flex-row gap-4 items-end">
-                  <div className="flex-1"><label className="block text-xs font-bold text-slate-500 mb-1">Pick Date</label><input type="date" value={manualDate} onChange={e => setManualDate(e.target.value)} className="w-full p-2 border rounded bg-white" /></div>
-                  <button type="button" onClick={handleAddManualDate} className="bg-purple-600 text-white px-6 py-2 rounded font-bold text-sm">+ Add Date</button>
-                </div>
-             )}
-
-             {/* Preview Dates (Only for Manual Mode or verification) */}
-             {type !== 'Regular' && generatedDates.length > 0 && (
-               <div className="mt-6 flex flex-wrap gap-2 max-h-32 overflow-y-auto">
-                 {generatedDates.map(d => (
-                   <div key={d} className="bg-white text-slate-700 border border-slate-300 px-3 py-1 rounded-full text-xs font-mono flex items-center gap-2 shadow-sm">
-                     {d} <button type="button" onClick={() => removeDate(d)} className="text-red-400 hover:text-red-600 font-bold">×</button>
-                   </div>
-                 ))}
+                  </select>
                </div>
-             )}
-          </div>
 
-          <button type="submit" className="w-full bg-slate-900 text-white py-4 rounded-xl font-bold text-lg hover:bg-black shadow-lg transition-all">
-            Confirm Booking ({generatedDates.length * selectedPeriods.length} Slots)
-          </button>
-        </form>
+               {/* Dynamic Inputs based on Mode */}
+               {mode === 'Regular' ? (
+                   <div className="space-y-4 animate-fade-in">
+                       <div>
+                           <label className="block text-xs font-bold text-slate-500 uppercase mb-1">Day of Week</label>
+                           <div className="flex gap-2">
+                               {daysOfWeek.map(day => (
+                                   <button key={day.name} onClick={() => handleDaySelect(day.index)} type="button" className={`flex-1 py-2 rounded border text-xs font-bold ${selectedDay === day.index ? 'bg-slate-800 text-white' : 'bg-white text-slate-600 hover:bg-slate-50'}`}>{day.name}</button>
+                               ))}
+                           </div>
+                       </div>
+                       <div>
+                           <label className="block text-xs font-bold text-slate-500 uppercase mb-1">Class / Purpose</label>
+                           <input type="text" value={purpose} onChange={e => setPurpose(e.target.value)} className="w-full p-3 border rounded-lg" placeholder="e.g. 2nd Year MCA Lab" />
+                       </div>
+                   </div>
+               ) : (
+                   <div className="space-y-4 animate-fade-in">
+                       <div className="bg-yellow-50 border border-yellow-200 p-4 rounded-xl">
+                           <label className="block text-xs font-bold text-yellow-800 uppercase mb-1">Exam Date</label>
+                           <input type="date" value={examDate} onChange={e => setExamDate(e.target.value)} className="w-full p-2 border rounded bg-white font-bold" />
+                       </div>
+                       
+                       {/* DYNAMIC DROPDOWN FOR EXAM NAMES */}
+                       <div>
+                           <label className="block text-xs font-bold text-slate-500 uppercase mb-1">Exam Type</label>
+                           <select 
+                              value={selectedExamType} 
+                              onChange={e => setSelectedExamType(e.target.value)} 
+                              className="w-full p-3 border rounded-lg bg-white font-medium outline-none focus:ring-2 focus:ring-blue-500"
+                           >
+                              <option value="">-- Select --</option>
+                              {mode === 'Test' 
+                                 ? TEST_OPTIONS.map(opt => <option key={opt} value={opt}>{opt}</option>)
+                                 : SEMESTER_OPTIONS.map(opt => <option key={opt} value={opt}>{opt}</option>)
+                              }
+                           </select>
+                       </div>
+
+                       {/* CUSTOM INPUT IF 'OTHER' */}
+                       {selectedExamType === 'Other' && (
+                           <div className="animate-fade-in">
+                               <label className="block text-xs font-bold text-slate-500 uppercase mb-1">Specify Name</label>
+                               <input 
+                                  type="text" 
+                                  value={customExamName} 
+                                  onChange={e => setCustomExamName(e.target.value)} 
+                                  className="w-full p-3 border border-blue-300 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none" 
+                                  placeholder="Enter title..." 
+                                  autoFocus
+                               />
+                           </div>
+                       )}
+                   </div>
+               )}
+
+               {/* Period Selector */}
+               <div>
+                  <label className="block text-xs font-bold text-slate-500 uppercase mb-2">Periods</label>
+                  <div className="grid grid-cols-5 gap-2">
+                    {[1,2,3,4,5,6,7,8,9,10].map(p => (
+                      <button key={p} type="button" onClick={() => togglePeriod(p)} className={`h-10 rounded text-sm font-bold border transition-all ${selectedPeriods.includes(p) ? 'bg-indigo-600 text-white' : 'bg-white text-slate-400 hover:border-indigo-300'}`}>{p}</button>
+                    ))}
+                  </div>
+               </div>
+
+               {/* Action Button */}
+               {mode === 'Regular' ? (
+                   <button onClick={handleSubmit} className="w-full py-4 bg-slate-900 text-white rounded-xl font-bold shadow-lg hover:bg-black">Confirm Semester Schedule</button>
+               ) : (
+                   <button onClick={addToQueue} className="w-full py-3 bg-indigo-600 text-white rounded-xl font-bold shadow hover:bg-indigo-700 flex items-center justify-center gap-2">
+                       <span>+ Add to Queue</span>
+                   </button>
+               )}
+
+            </div>
+
+            {/* --- RIGHT COLUMN: PREVIEW / QUEUE --- */}
+            <div className="lg:col-span-2 bg-slate-50 rounded-2xl border border-slate-200 p-6 flex flex-col min-h-[400px]">
+                
+                {mode === 'Regular' ? (
+                    <div className="text-center h-full flex flex-col items-center justify-center text-slate-400">
+                        {generatedDates.length > 0 ? (
+                            <div className="text-left w-full max-w-xs">
+                                <h3 className="font-bold text-slate-700 mb-4 border-b pb-2">Summary</h3>
+                                <p className="text-sm">📅 <strong>{generatedDates.length} Weeks</strong></p>
+                                <p className="text-sm">🚀 Starts: <strong>{generatedDates[0]}</strong></p>
+                                <p className="text-sm">🏁 Ends: <strong>{generatedDates[generatedDates.length-1]}</strong></p>
+                                <p className="text-sm">⏰ Periods: <strong>{selectedPeriods.join(", ")}</strong></p>
+                            </div>
+                        ) : (
+                            <>
+                                <span className="text-4xl mb-2">📅</span>
+                                <p>Select a day to preview the recurring schedule.</p>
+                            </>
+                        )}
+                    </div>
+                ) : (
+                    <>
+                        <div className="flex justify-between items-center mb-4">
+                            <h3 className="font-bold text-slate-700">Exam Queue ({examQueue.length})</h3>
+                            {examQueue.length > 0 && <button onClick={() => setExamQueue([])} className="text-xs text-red-500 font-bold hover:underline">Clear All</button>}
+                        </div>
+                        
+                        <div className="flex-1 overflow-y-auto custom-scrollbar space-y-3 mb-6">
+                            {examQueue.length === 0 ? (
+                                <div className="h-full flex flex-col items-center justify-center text-slate-400 opacity-60">
+                                    <span className="text-4xl mb-2">📥</span>
+                                    <p>Add exams to the queue here.</p>
+                                </div>
+                            ) : (
+                                examQueue.map((item, idx) => (
+                                    <div key={item.id} className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm flex justify-between items-center animate-slide-up">
+                                        <div>
+                                            <div className="flex items-center gap-2">
+                                                <span className={`text-[10px] px-2 py-0.5 rounded text-white font-bold uppercase ${item.type === 'Semester Exam' ? 'bg-red-500' : 'bg-purple-500'}`}>{item.type}</span>
+                                                <span className="font-mono font-bold text-slate-700 text-sm">{item.date}</span>
+                                            </div>
+                                            <div className="font-bold text-slate-800 mt-1">{item.purpose.split(': ')[1]}</div>
+                                            <div className="text-xs text-slate-500 mt-0.5">
+                                                {item.labCode} • Periods: {item.periods.join(", ")} • {item.subjectName}
+                                            </div>
+                                        </div>
+                                        <button onClick={() => removeFromQueue(item.id)} className="w-8 h-8 flex items-center justify-center rounded-full bg-red-50 text-red-500 hover:bg-red-100 transition">✕</button>
+                                    </div>
+                                ))
+                            )}
+                        </div>
+
+                        {examQueue.length > 0 && (
+                            <button onClick={handleSubmit} className="w-full py-4 bg-slate-900 text-white rounded-xl font-bold shadow-lg hover:bg-black transition-all flex items-center justify-center gap-2">
+                                <span>🚀 Submit {examQueue.length} Exam Bookings</span>
+                            </button>
+                        )}
+                    </>
+                )}
+            </div>
+
+          </div>
+        </div>
       </div>
     </div>
   );
