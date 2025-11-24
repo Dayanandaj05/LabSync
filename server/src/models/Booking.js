@@ -15,8 +15,9 @@ const BookingSchema = new mongoose.Schema({
 
   type: { 
     type: String, 
+    // ✅ ADDED 'Semester Exam' here
     enum: [
-        'Regular', 'Test', 'Exam', 'Event', 'Project Review', 'Workshop', 
+        'Regular', 'Test', 'Exam', 'Semester Exam', 'Event', 'Project Review', 'Workshop', 
         'Placement Preparation', 'Studies', 'Lab Practice', 'Progression', 'Other'
     ], 
     default: 'Regular' 
@@ -30,7 +31,6 @@ const BookingSchema = new mongoose.Schema({
   isRecurring: { type: Boolean, default: false },
   recurrenceId: { type: String }, 
 
-  // ✅ THIS ARRAY MUST EXIST FOR WAITLIST TO WORK
   waitlist: [{
     user: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
     email: { type: String },

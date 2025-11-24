@@ -3,36 +3,34 @@ import React from "react";
 const PERIOD_LABELS = {
   1: "8:30 - 9:20",
   2: "9:20 - 10:10",
-  3: "10:10 - 10:30", // BREAK
+  3: "10:10 - 10:30", 
   4: "10:30 - 11:20",
   5: "11:20 - 12:10",
-  6: "12:10 - 1:40",  // LUNCH
+  6: "12:10 - 1:40", 
   7: "1:40 - 2:30",
   8: "2:30 - 3:20",
   9: "3:20 - 4:30",
 };
 
-export default function TimetableGrid({ gridData, onSlotClick, currentUser, isReadOnly }) {
+export default function TimetableGrid({ gridData, onSlotClick, currentUser, isReadOnly, selectedSlots = [] }) {
   const { labs = [], schedule = {} } = gridData || {}; 
   const periods = Object.keys(PERIOD_LABELS).map(Number);
-  const isAdmin = currentUser?.role === 'Admin';
 
-  const getCellStyle = (cell) => {
-    // 1. Past Date / Read Only -> blocked
+  const getCellStyle = (cell, isSelected) => {
     if (isReadOnly && !cell) return "bg-slate-50 cursor-not-allowed"; 
 
-    // 2. Free Slot
+    // ✅ Highlight Selected Slots
+    if (isSelected) {
+        return "bg-indigo-600 text-white border-indigo-700 shadow-inner transform scale-[0.98] transition-all";
+    }
+
     if (!cell) {
       if (isReadOnly) return "bg-white";
       return "bg-white hover:bg-emerald-50/60 hover:shadow-[inset_0_0_0_2px_rgba(16,185,129,0.2)] cursor-pointer group";
     }
     
-    // 3. Occupied Slot Logic
     const isMine = currentUser && cell.creatorName === currentUser.name;
     const baseBorder = isMine ? "border-2 border-indigo-500 z-10" : "border-l-4"; 
-    
-    // ✅ FIX: Allow interaction for EVERYONE (Students need to click to Waitlist)
-    // Previously: const adminCursor = (isAdmin && !isReadOnly) ? ... : "cursor-not-allowed";
     const interactiveCursor = !isReadOnly ? "cursor-pointer hover:opacity-80 hover:shadow-inner" : "cursor-default";
 
     if (cell.status === "Pending") return `bg-amber-50 border-amber-300 ${interactiveCursor} ${baseBorder}`;
@@ -40,13 +38,22 @@ export default function TimetableGrid({ gridData, onSlotClick, currentUser, isRe
     return `bg-blue-50 border-blue-300 ${interactiveCursor} ${baseBorder}`; 
   };
 
-  const getCellContent = (cell) => {
+  const getCellContent = (cell, isSelected) => {
+    // ✅ Show Checkmark if selected
+    if (isSelected) {
+        return (
+            <div className="flex items-center justify-center h-full animate-fade-in">
+                <span className="text-2xl font-bold">✓</span>
+            </div>
+        );
+    }
+
     if (!cell) {
       if (isReadOnly) return null;
       return (
         <div className="flex items-center justify-center h-full">
           <span className="text-emerald-600/0 group-hover:text-emerald-600 text-[10px] font-bold uppercase tracking-widest transition-all duration-300 transform group-hover:translate-y-0 translate-y-2">
-            Book
+            Select
           </span>
         </div>
       );
@@ -76,7 +83,6 @@ export default function TimetableGrid({ gridData, onSlotClick, currentUser, isRe
 
   return (
     <div className="relative">
-      
       {isReadOnly && (
         <div className="absolute top-0 right-0 z-20 bg-slate-100 text-slate-400 px-3 py-1 rounded-bl-xl text-[10px] font-bold uppercase tracking-widest border-l border-b border-slate-200 pointer-events-none">
           Past Date • View Only
@@ -116,9 +122,7 @@ export default function TimetableGrid({ gridData, onSlotClick, currentUser, isRe
                       <div className="absolute inset-0 opacity-[0.05]" style={{backgroundImage: 'repeating-linear-gradient(45deg, #000 0, #000 10px, transparent 10px, transparent 20px)'}}></div>
                       <div className="relative z-10 flex items-center justify-center gap-2 text-slate-600 font-bold tracking-widest text-sm opacity-70">
                         <span>⛔ MAINTENANCE</span>
-                        <span className="text-xs bg-slate-200 px-2 py-1 rounded border border-slate-300 font-mono text-slate-700">
-                          {lab.maintenanceReason || "Scheduled"}
-                        </span>
+                        <span className="text-xs bg-slate-200 px-2 py-1 rounded border border-slate-300 font-mono text-slate-700">{lab.maintenanceReason || "Scheduled"}</span>
                       </div>
                     </td>
                   ) : (
@@ -127,15 +131,17 @@ export default function TimetableGrid({ gridData, onSlotClick, currentUser, isRe
                         return <td key={`${lab.code}-${p}`} className="bg-slate-100/50 p-0 relative overflow-hidden"><div className="absolute inset-0 opacity-[0.03]" style={{ backgroundImage: 'repeating-linear-gradient(45deg, #000 0, #000 1px, transparent 0, transparent 50%)', backgroundSize: '10px 10px' }} /></td>;
                       }
                       const cellData = schedule[lab.code]?.[p];
+                      
+                      // ✅ CHECK SELECTION
+                      const isSelected = selectedSlots.some(s => s.labCode === lab.code && s.period === p);
+
                       return (
                         <td
                           key={`${lab.code}-${p}`}
-                          // ✅ CRITICAL FIX: Removed "(!cellData || isAdmin)" check.
-                          // Now clicks always fire unless ReadOnly (Past Date).
                           onClick={() => !isReadOnly ? onSlotClick(lab, p, cellData) : null}
-                          className={`h-28 p-1 border-r border-dashed border-gray-100 relative transition-all duration-200 ease-out ${getCellStyle(cellData)}`}
+                          className={`h-28 p-1 border-r border-dashed border-gray-100 relative transition-all duration-200 ease-out ${getCellStyle(cellData, isSelected)}`}
                         >
-                          {getCellContent(cellData)}
+                          {getCellContent(cellData, isSelected)}
                         </td>
                       );
                     })

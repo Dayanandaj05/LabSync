@@ -2,13 +2,15 @@ import React, { useEffect, useState } from "react";
 import API from "../services/api";
 import { BarChart } from "../components/AdminCharts";
 import { Link } from "react-router-dom";
+import { deleteMaintenance, getLabs } from "../services/admin";
 
 export default function AdminDashboard() {
   // Data State
   const [pendingBookings, setPendingBookings] = useState([]);
   const [pendingUsers, setPendingUsers] = useState([]);
   const [bookingHistory, setBookingHistory] = useState([]);
-  const [announcementsList, setAnnouncementsList] = useState([]); // ✅ NEW
+  const [announcementsList, setAnnouncementsList] = useState([]); 
+  const [activeMaintenance, setActiveMaintenance] = useState([]); 
   
   // Users & Search
   const [usersList, setUsersList] = useState([]); 
@@ -57,10 +59,21 @@ export default function AdminDashboard() {
         const subRes = await API.get("/api/admin/subjects", { headers: { Authorization: `Bearer ${token}` } });
         setSubjects(subRes.data.subjects || []);
       }
-      // ✅ NEW: Fetch Announcements
       if (activeTab === 'announcements') {
         const annRes = await API.get("/api/admin/announcements", { headers: { Authorization: `Bearer ${token}` } });
         setAnnouncementsList(annRes.data.announcements || []);
+      }
+      if (activeTab === 'maintenance') {
+         const labsData = await getLabs(token);
+         const flatMaintenance = [];
+         labsData.labs.forEach(l => {
+             if(l.maintenanceLog && l.maintenanceLog.length > 0) {
+                 l.maintenanceLog.forEach(log => {
+                     flatMaintenance.push({ ...log, labCode: l.code });
+                 });
+             }
+         });
+         setActiveMaintenance(flatMaintenance.sort((a,b) => new Date(b.start) - new Date(a.start)));
       }
 
     } catch (err) { console.error("Fetch Error:", err); }
@@ -114,7 +127,16 @@ export default function AdminDashboard() {
       }, { headers: { Authorization: `Bearer ${token}` } });
       alert("Maintenance Enabled");
       setMReason(""); setMStart(""); setMEnd("");
+      fetchData(); 
     } catch (err) { alert("Failed: " + (err.response?.data?.error || err.message)); }
+  };
+
+  const handleRemoveMaintenance = async (labCode, logId) => {
+      if(!confirm("Remove this maintenance block? The grid will become free immediately.")) return;
+      try {
+          await deleteMaintenance(labCode, logId, token);
+          fetchData();
+      } catch(err) { alert(err.message); }
   };
 
   const handleAddSubject = async (e) => {
@@ -166,7 +188,6 @@ export default function AdminDashboard() {
     if (!confirm("Cancel this booking? Waitlisted users will be notified.")) return;
     try {
       await API.delete(`/api/admin/bookings/${bookingId}`, { headers: { Authorization: `Bearer ${token}` } });
-      // ✅ FIX: Reload the correct tab data
       if (activeTab === 'history') {
          const historyRes = await API.get("/api/admin/bookings/history", { headers: { Authorization: `Bearer ${token}` } });
          setBookingHistory(historyRes.data.history || []);
@@ -187,21 +208,15 @@ export default function AdminDashboard() {
   return (
     <div className="flex flex-col h-[calc(100vh-64px)] overflow-hidden bg-slate-50 font-sans text-slate-800">
       
-      {/* 1. COMPACT TOOLBAR (Stats & Actions) */}
+      {/* TOOLBAR */}
       <div className="bg-white border-b px-6 py-3 shrink-0 flex flex-wrap items-center justify-between gap-4 shadow-sm z-20">
-         
-         {/* Stats Pills */}
          {stats && (
            <div className="flex gap-3 text-xs font-bold">
              <div className="px-3 py-1 bg-blue-50 text-blue-700 rounded-full border border-blue-200 shadow-sm flex items-center gap-2">👥 Users: {stats.totalUsers}</div>
              <div className="px-3 py-1 bg-purple-50 text-purple-700 rounded-full border border-purple-200 shadow-sm flex items-center gap-2">📅 Bookings: {stats.totalBookings}</div>
            </div>
          )}
-
-         {/* Quick Actions */}
          <div className="flex items-center gap-4 text-xs overflow-x-auto no-scrollbar">
-            
-            {/* Maintenance Form */}
             <form onSubmit={handleMaintenance} className="flex items-center gap-1 bg-red-50 p-1 rounded-lg border border-red-100">
                <select className="px-1 py-1 bg-transparent font-bold text-red-900 outline-none" value={mLab} onChange={e=>setMLab(e.target.value)}><option>CC</option><option>IS</option><option>CAT</option></select>
                <input type="date" className="px-1 py-1 bg-transparent w-24 outline-none" value={mStart} onChange={e=>setMStart(e.target.value)} required />
@@ -209,22 +224,17 @@ export default function AdminDashboard() {
                <input type="date" className="px-1 py-1 bg-transparent w-24 outline-none" value={mEnd} onChange={e=>setMEnd(e.target.value)} required />
                <button type="submit" className="bg-red-600 text-white px-2 py-1 rounded hover:bg-red-700">Block</button>
             </form>
-
             <div className="w-px h-6 bg-slate-200"></div>
-            
             <Link to="/recurring" className="bg-slate-800 text-white px-3 py-1.5 rounded-lg hover:bg-black transition whitespace-nowrap">🔄 Recurrence</Link>
-            
             <a href={`${import.meta.env.VITE_API_URL || "http://localhost:5001"}/api/admin/export-csv?token=${token}`} target="_blank" rel="noopener noreferrer" className="bg-white border border-slate-300 text-slate-700 px-3 py-1.5 rounded-lg hover:bg-slate-50 transition font-bold whitespace-nowrap">⬇ CSV</a>
          </div>
       </div>
 
-      {/* 2. MAIN LAYOUT */}
       <div className="flex flex-1 overflow-hidden">
-        
         {/* SIDEBAR */}
         <nav className="w-48 bg-white border-r flex flex-col pt-4 shrink-0 overflow-y-auto">
           <div className="px-4 mb-2 text-xs font-bold text-slate-400 uppercase tracking-wider">Dashboard</div>
-          {['Pending', 'History', 'Announcements', 'Users', 'Subjects', 'Analytics'].map(tab => (
+          {['Pending', 'History', 'Maintenance', 'Announcements', 'Users', 'Subjects', 'Analytics'].map(tab => (
              <button key={tab} onClick={() => setActiveTab(tab.toLowerCase())} 
                className={`text-left px-6 py-3 font-bold text-sm border-l-4 transition-all ${activeTab === tab.toLowerCase() ? 'border-indigo-600 bg-indigo-50 text-indigo-700' : 'border-transparent text-slate-500 hover:bg-slate-50 hover:text-slate-800'}`}>
                {tab}
@@ -239,7 +249,6 @@ export default function AdminDashboard() {
           {/* TAB: PENDING */}
           {activeTab === 'pending' && (
             <div className="flex flex-col md:flex-row gap-6 h-full">
-              {/* Users Column */}
               <div className="flex-1 bg-white rounded-xl border shadow-sm flex flex-col overflow-hidden max-h-full">
                 <div className="p-4 border-b bg-slate-50 font-bold text-sm text-slate-700 flex justify-between"><span>New Users</span><span className="bg-slate-200 px-2 rounded-full text-xs">{pendingUsers.length}</span></div>
                 <div className="overflow-y-auto p-2 space-y-2 flex-1 custom-scrollbar">
@@ -252,7 +261,6 @@ export default function AdminDashboard() {
                   {pendingUsers.length === 0 && <div className="p-8 text-center text-slate-400 text-sm italic">All users approved.</div>}
                 </div>
               </div>
-              {/* Bookings Column */}
               <div className="flex-[1.5] bg-white rounded-xl border shadow-sm flex flex-col overflow-hidden max-h-full">
                 <div className="p-4 border-b bg-slate-50 font-bold text-sm text-slate-700 flex justify-between"><span>Booking Requests</span><span className="bg-slate-200 px-2 rounded-full text-xs">{pendingBookings.length}</span></div>
                 <div className="overflow-y-auto p-2 space-y-2 flex-1 custom-scrollbar">
@@ -271,98 +279,119 @@ export default function AdminDashboard() {
           )}
 
           {/* TAB: HISTORY */}
-{activeTab === 'history' && (
-  <div className="bg-white rounded-xl border shadow-sm overflow-hidden flex flex-col h-full">
-    <div className="overflow-auto custom-scrollbar">
-      <table className="min-w-full text-sm text-left">
-        <thead className="bg-slate-50 text-slate-500 sticky top-0 z-10 shadow-sm">
-           <tr>
-             <th className="p-3">Date</th>
-             <th className="p-3">User</th>
-             <th className="p-3">Details</th>
-             <th className="p-3 text-center">Waitlist</th> {/* ✅ NEW COL */}
-             <th className="p-3">Status</th>
-             <th className="p-3">Action</th>
-           </tr>
-        </thead>
-        <tbody className="divide-y">
-          {bookingHistory.map(b => (
-            <tr key={b._id} className="hover:bg-slate-50">
-              <td className="p-3 text-xs font-mono text-slate-500">{formatDate(b.updatedAt || b.createdAt)}</td>
-              <td className="p-3 font-bold">{b.creatorName}</td>
-              <td className="p-3">Lab {b.labCode}, P{b.period} <br/><span className="text-xs text-slate-400">{b.date}</span></td>
+          {activeTab === 'history' && (
+            <div className="bg-white rounded-xl border shadow-sm overflow-hidden flex flex-col h-full">
+              <div className="overflow-auto custom-scrollbar">
+                <table className="min-w-full text-sm text-left">
+                  <thead className="bg-slate-50 text-slate-500 sticky top-0 z-10 shadow-sm">
+                     <tr>
+                       <th className="p-3">Date</th>
+                       <th className="p-3">User</th>
+                       <th className="p-3">Details</th>
+                       <th className="p-3 text-center">Waitlist</th>
+                       <th className="p-3">Status</th>
+                       <th className="p-3">Action</th>
+                     </tr>
+                  </thead>
+                  <tbody className="divide-y">
+                    {bookingHistory.map(b => (
+                      <tr key={b._id} className="hover:bg-slate-50">
+                        <td className="p-3 text-xs font-mono text-slate-500">{formatDate(b.updatedAt || b.createdAt)}</td>
+                        <td className="p-3 font-bold">{b.creatorName}</td>
+                        <td className="p-3">Lab {b.labCode}, P{b.period} <br/><span className="text-xs text-slate-400">{b.date}</span></td>
+                        <td className="p-3 text-center">
+                           {b.waitlist && b.waitlist.length > 0 ? (
+                              <span className="bg-indigo-100 text-indigo-700 px-2 py-1 rounded-full text-xs font-bold shadow-sm">
+                                 ⏳ {b.waitlist.length}
+                              </span>
+                           ) : (
+                              <span className="text-slate-300">-</span>
+                           )}
+                        </td>
+                        <td className="p-3"><span className={`px-2 py-1 rounded-full text-[10px] font-bold uppercase ${b.status==='Approved'?'bg-emerald-100 text-emerald-700':'bg-red-100 text-red-700'}`}>{b.status}</span></td>
+                        <td className="p-3"><button onClick={() => handleCancelBooking(b._id)} className="text-red-500 underline text-xs font-bold hover:text-red-700">Cancel</button></td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          )}
 
-              {/* ✅ NEW WAITLIST CELL */}
-              <td className="p-3 text-center">
-                 {b.waitlist && b.waitlist.length > 0 ? (
-                    <span className="bg-indigo-100 text-indigo-700 px-2 py-1 rounded-full text-xs font-bold shadow-sm">
-                       ⏳ {b.waitlist.length}
-                    </span>
-                 ) : (
-                    <span className="text-slate-300">-</span>
-                 )}
-              </td>
+          {/* TAB: MAINTENANCE */}
+          {activeTab === 'maintenance' && (
+             <div className="flex flex-col h-full gap-6">
+                <div className="bg-white p-6 rounded-xl border shadow-sm">
+                   <h3 className="font-bold text-lg mb-4 text-red-800 flex items-center gap-2">⛔ Block Lab Access</h3>
+                   <form onSubmit={handleMaintenance} className="flex flex-col md:flex-row gap-3 items-end">
+                      <div className="flex-1">
+                         <label className="block text-xs font-bold text-slate-500 mb-1">Select Lab</label>
+                         <select className="w-full p-2 border rounded bg-slate-50 font-bold" value={mLab} onChange={e=>setMLab(e.target.value)}><option>CC</option><option>IS</option><option>CAT</option></select>
+                      </div>
+                      <div className="flex-1">
+                         <label className="block text-xs font-bold text-slate-500 mb-1">Start Date</label>
+                         <input type="date" className="w-full p-2 border rounded" value={mStart} onChange={e=>setMStart(e.target.value)} required />
+                      </div>
+                      <div className="flex-1">
+                         <label className="block text-xs font-bold text-slate-500 mb-1">End Date</label>
+                         <input type="date" className="w-full p-2 border rounded" value={mEnd} onChange={e=>setMEnd(e.target.value)} required />
+                      </div>
+                      <div className="flex-[2]">
+                         <label className="block text-xs font-bold text-slate-500 mb-1">Reason</label>
+                         <input type="text" placeholder="e.g. Hardware Repair" className="w-full p-2 border rounded" value={mReason} onChange={e=>setMReason(e.target.value)} required />
+                      </div>
+                      <button type="submit" className="bg-red-600 text-white px-6 py-2 rounded font-bold hover:bg-red-700 shadow-sm">Block</button>
+                   </form>
+                </div>
+                <div className="bg-white rounded-xl border shadow-sm flex-1 overflow-hidden flex flex-col">
+                   <div className="p-4 border-b bg-slate-50 font-bold text-slate-700">Active Maintenance Blocks</div>
+                   <div className="overflow-y-auto flex-1 p-4 custom-scrollbar">
+                      {activeMaintenance.length === 0 ? (
+                          <div className="text-center text-slate-400 italic py-10">No active maintenance blocks.</div>
+                      ) : (
+                          <table className="min-w-full text-sm text-left">
+                             <thead className="text-slate-400 border-b"><tr><th className="pb-2">Lab</th><th className="pb-2">Duration</th><th className="pb-2">Reason</th><th className="pb-2 text-right">Action</th></tr></thead>
+                             <tbody className="divide-y">
+                                {activeMaintenance.map(m => (
+                                   <tr key={m._id} className="group hover:bg-red-50">
+                                      <td className="py-3 font-bold font-mono text-red-800">{m.labCode}</td>
+                                      <td className="py-3 text-slate-600">
+                                         {new Date(m.start).toLocaleDateString()} <span className="text-slate-300 mx-1">➞</span> {new Date(m.end).toLocaleDateString()}
+                                      </td>
+                                      <td className="py-3 italic text-slate-500">{m.reason}</td>
+                                      <td className="py-3 text-right">
+                                         <button onClick={() => handleRemoveMaintenance(m.labCode, m._id)} className="text-red-500 border border-red-200 px-3 py-1 rounded text-xs font-bold hover:bg-red-600 hover:text-white transition">Remove</button>
+                                      </td>
+                                   </tr>
+                                ))}
+                             </tbody>
+                          </table>
+                      )}
+                   </div>
+                </div>
+             </div>
+          )}
 
-              <td className="p-3"><span className={`px-2 py-1 rounded-full text-[10px] font-bold uppercase ${b.status==='Approved'?'bg-emerald-100 text-emerald-700':'bg-red-100 text-red-700'}`}>{b.status}</span></td>
-              <td className="p-3"><button onClick={() => handleCancelBooking(b._id)} className="text-red-500 underline text-xs font-bold hover:text-red-700">Cancel</button></td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
-    </div>
-  </div>
-)}
-
-          {/* ✅ TAB: ANNOUNCEMENTS (New Control Panel) */}
+          {/* TAB: ANNOUNCEMENTS */}
           {activeTab === 'announcements' && (
              <div className="flex flex-col h-full gap-6">
-                {/* Creation Form */}
                 <div className="bg-white p-6 rounded-xl border shadow-sm">
                    <h3 className="font-bold text-lg mb-4">📢 Post Announcement</h3>
                    <form onSubmit={handlePostAnnouncement} className="flex flex-col md:flex-row gap-3 items-stretch">
-                      
-                      {/* Message Input */}
-                      <input 
-                        className="flex-[2] p-3 border rounded-lg bg-slate-50 outline-none focus:ring-2 focus:ring-indigo-500" 
-                        placeholder="Type your announcement here..." 
-                        value={announcementMsg} 
-                        onChange={e=>setAnnouncementMsg(e.target.value)} 
-                      />
-                      
-                      {/* Type Selector */}
-                      <select 
-                        className="p-3 border rounded-lg bg-white outline-none focus:ring-2 focus:ring-indigo-500 font-medium text-slate-700" 
-                        value={announcementType} 
-                        onChange={e=>setAnnouncementType(e.target.value)}
-                      >
-                         <option value="Info">ℹ️ Info (Blue)</option>
-                         <option value="Warning">⚠️ Warning (Red)</option>
-                         <option value="Test">🔧 Test (Gray)</option>
+                      <input className="flex-[2] p-3 border rounded-lg bg-slate-50 outline-none focus:ring-2 focus:ring-indigo-500" placeholder="Type here..." value={announcementMsg} onChange={e=>setAnnouncementMsg(e.target.value)} />
+                      <select className="p-3 border rounded-lg bg-white outline-none focus:ring-2 focus:ring-indigo-500 font-medium text-slate-700" value={announcementType} onChange={e=>setAnnouncementType(e.target.value)}>
+                         <option value="Info">ℹ️ Info</option><option value="Warning">⚠️ Warning</option><option value="Test">🔧 Test</option>
                       </select>
-
-                      {/* ✅ DYNAMIC DURATION INPUT */}
                       <div className="flex items-center border rounded-lg px-3 bg-white focus-within:ring-2 focus-within:ring-indigo-500">
                         <span className="text-xs font-bold text-slate-400 mr-2 uppercase tracking-wider">Duration:</span>
-                        <input 
-                            type="number" 
-                            min="1" 
-                            max="365"
-                            className="w-12 outline-none font-bold text-slate-700 text-center" 
-                            value={announcementDuration} 
-                            onChange={e=>setAnnouncementDuration(e.target.value)} 
-                        />
+                        <input type="number" min="1" max="365" className="w-12 outline-none font-bold text-slate-700 text-center" value={announcementDuration} onChange={e=>setAnnouncementDuration(e.target.value)} />
                         <span className="text-xs font-bold text-slate-400 ml-1">Days</span>
                       </div>
-
-                      {/* Submit Button */}
-                      <button type="submit" className="bg-slate-900 text-white px-6 rounded-lg font-bold hover:bg-black transition shadow-lg whitespace-nowrap">
-                        Post
-                      </button>
+                      <button type="submit" className="bg-slate-900 text-white px-6 rounded-lg font-bold hover:bg-black transition shadow-lg whitespace-nowrap">Post</button>
                    </form>
                 </div>
-                {/* Management List */}
                 <div className="bg-white rounded-xl border shadow-sm flex-1 overflow-hidden flex flex-col">
-                   <div className="p-4 border-b bg-slate-50 font-bold text-slate-700">Active & Past Announcements</div>
+                   <div className="p-4 border-b bg-slate-50 font-bold text-slate-700">Active & Past</div>
                    <div className="overflow-y-auto flex-1 p-2 custom-scrollbar">
                       {announcementsList.map(a => (
                          <div key={a._id} className={`flex justify-between items-center p-4 mb-2 rounded-lg border ${a.active ? 'bg-white border-slate-200' : 'bg-slate-100 border-slate-200 opacity-70'}`}>
@@ -381,7 +410,6 @@ export default function AdminDashboard() {
                             </div>
                          </div>
                       ))}
-                      {announcementsList.length === 0 && <div className="p-10 text-center text-slate-400 italic">No announcements found.</div>}
                    </div>
                 </div>
              </div>
@@ -464,7 +492,6 @@ export default function AdminDashboard() {
                             <span className="bg-white px-3 py-1 rounded shadow-sm font-mono font-bold text-slate-700">{s.count}</span>
                         </div>
                     ))}
-                    {stats.bookingsBySubject.length === 0 && <p className="text-slate-400 text-sm italic">No classes recorded yet.</p>}
                   </div>
                </div>
              </div>

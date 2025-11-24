@@ -14,7 +14,6 @@ router.get('/grid-data', async (req, res) => {
 
     const labs = await Lab.find().lean();
     
-    // Check Maintenance
     const processedLabs = labs.map(l => {
         const isMaintenance = (l.maintenanceLog || []).some(log => {
             const start = new Date(log.start).toISOString().slice(0, 10);
@@ -33,11 +32,10 @@ router.get('/grid-data', async (req, res) => {
         };
     });
 
-    // ✅ FIX: Populate Waitlist Users so Admins can see names
     const bookings = await Booking.find({ date })
         .populate('lab')
         .populate('subject')
-        .populate('waitlist.user', 'name email classGroup') // <--- NEW
+        .populate('waitlist.user', 'name email classGroup') 
         .sort({ status: 1 })
         .lean();
 
@@ -54,22 +52,25 @@ router.get('/grid-data', async (req, res) => {
         purpose: b.purpose, 
         type: b.type, 
         subjectCode: b.subject?.code,
-        waitlist: b.waitlist // <--- Pass the waitlist array to frontend
+        waitlist: b.waitlist,
+        showInBanner: b.showInBanner
       }))
     });
   } catch (err) { 
-      console.error(err);
+      console.error("GRID ERROR:", err); // ✅ Log to Terminal
       res.status(500).json({ error: 'Server Error' }); 
   }
 });
 
-// ... (Keep the rest of the file exactly as it was: /subjects, /upcoming-tests, /calendar-status, /announcements, /logs)
-// Just replace the top route (/grid-data) with the code above.
-
+// 2. SUBJECTS
 router.get('/subjects', async (req, res) => {
-  try { const subjects = await Subject.find({ active: true }).sort({ code: 1 }); res.json({ subjects }); } catch (err) { res.status(500).json({ error: 'Error' }); }
+  try { 
+      const subjects = await Subject.find({ active: true }).sort({ code: 1 }); 
+      res.json({ subjects }); 
+  } catch (err) { res.status(500).json({ error: 'Error' }); }
 });
 
+// 3. UPCOMING TESTS
 router.get('/upcoming-tests', async (req, res) => {
   try {
     const today = new Date().toISOString().slice(0, 10);
@@ -80,11 +81,19 @@ router.get('/upcoming-tests', async (req, res) => {
         { showInBanner: true }
       ]
     };
-    const tests = await Booking.find(query).populate('lab', 'code').sort({ date: 1 }).limit(100); 
+    const tests = await Booking.find(query)
+      .populate('lab', 'code')
+      .sort({ date: 1 })
+      .limit(500); 
+      
     res.json({ tests });
-  } catch (err) { res.status(500).json({ error: 'error' }); }
+  } catch (err) { 
+    console.error("UPCOMING TESTS ERROR:", err); // ✅ Log to Terminal
+    res.status(500).json({ error: 'error' }); 
+  }
 });
 
+// 4. CALENDAR STATUS
 router.get('/calendar-status', async (req, res) => {
   try {
     const { start, days } = req.query;
@@ -96,6 +105,7 @@ router.get('/calendar-status', async (req, res) => {
     const bookings = await Booking.find({ date: { $gte: start, $lt: end }, status: 'Approved' }).lean();
     const labs = await Lab.find().lean();
     const statusMap = {}; 
+    
     const markDate = (dateStr, type) => {
         if (!statusMap[dateStr]) statusMap[dateStr] = { hasExam: false, hasReview: false, hasMaintenance: false, count: 0 };
         if (type === 'Booking') statusMap[dateStr].count++;
@@ -103,12 +113,14 @@ router.get('/calendar-status', async (req, res) => {
         if (type === 'Review') statusMap[dateStr].hasReview = true;
         if (type === 'Maintenance') statusMap[dateStr].hasMaintenance = true;
     };
+
     bookings.forEach(b => {
         let type = 'Booking';
         if (['Test', 'Exam'].includes(b.type)) type = 'Test';
         if (['Project Review'].includes(b.type)) type = 'Review';
         markDate(b.date, type);
     });
+
     const curr = new Date(start);
     const last = new Date(end);
     while(curr <= last) {
@@ -125,14 +137,23 @@ router.get('/calendar-status', async (req, res) => {
   } catch (err) { res.status(500).json({ error: 'Error' }); }
 });
 
+// 5. ANNOUNCEMENTS
 router.get('/announcements', async (req, res) => {
     try {
         const now = new Date();
-        const announcements = await Announcement.find({ active: true, expiresAt: { $gt: now } }).sort({ createdAt: -1 }).limit(5);
+        const query = {
+            active: true,
+            $or: [
+                { expiresAt: { $gt: now } },
+                { expiresAt: { $exists: false } } 
+            ]
+        };
+        const announcements = await Announcement.find(query).sort({ createdAt: -1 }).limit(5);
         res.json({ announcements });
     } catch (err) { res.status(500).json({ error: 'Error fetching announcements' }); }
 });
 
+// 6. LOGS
 router.get('/logs', async (req, res) => {
     const logs = await Log.find().sort({ timestamp: -1 }).limit(20).populate('user', 'name').lean();
     res.json({ logs });
