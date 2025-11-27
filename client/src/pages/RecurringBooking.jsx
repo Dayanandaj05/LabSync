@@ -19,6 +19,8 @@ export default function RecurringBooking() {
   const [selectedDay, setSelectedDay] = useState(null);
   const [generatedDates, setGeneratedDates] = useState([]);
   const [selectedSubject, setSelectedSubject] = useState("");
+  const [semesterStart, setSemesterStart] = useState("");
+  const [semesterEnd, setSemesterEnd] = useState("");
 
   // --- EXAM BATCH STATE ---
   const [examDate, setExamDate] = useState("");
@@ -49,15 +51,40 @@ export default function RecurringBooking() {
   // --- LOGIC: REGULAR SEMESTER ---
   const handleDaySelect = (dayIndex) => {
      setSelectedDay(dayIndex);
-     const today = new Date();
-     const resultDate = new Date();
-     resultDate.setDate(today.getDate() + (dayIndex + 7 - today.getDay()) % 7);
-     const dates = [];
-     for(let i=0; i<20; i++) {
-        dates.push(resultDate.toISOString().slice(0, 10));
-        resultDate.setDate(resultDate.getDate() + 7);
+     if (semesterStart && semesterEnd) {
+       generateSemesterDates(dayIndex);
+     } else {
+       const today = new Date();
+       const resultDate = new Date();
+       resultDate.setDate(today.getDate() + (dayIndex + 7 - today.getDay()) % 7);
+       const dates = [];
+       for(let i=0; i<20; i++) {
+          dates.push(resultDate.toISOString().slice(0, 10));
+          resultDate.setDate(resultDate.getDate() + 7);
+       }
+       setGeneratedDates(dates);
      }
-     setGeneratedDates(dates);
+  };
+
+  const generateSemesterDates = (dayIndex) => {
+    if (!semesterStart || !semesterEnd) return;
+    const start = new Date(semesterStart);
+    const end = new Date(semesterEnd);
+    const dates = [];
+    
+    // Find first occurrence of selected day
+    const current = new Date(start);
+    while (current.getDay() !== dayIndex && current <= end) {
+      current.setDate(current.getDate() + 1);
+    }
+    
+    // Generate weekly dates
+    while (current <= end) {
+      dates.push(current.toISOString().slice(0, 10));
+      current.setDate(current.getDate() + 7);
+    }
+    
+    setGeneratedDates(dates);
   };
 
   // --- LOGIC: EXAM QUEUE ---
@@ -195,6 +222,16 @@ export default function RecurringBooking() {
                {/* Dynamic Inputs based on Mode */}
                {mode === 'Regular' ? (
                    <div className="space-y-4 animate-fade-in">
+                       <div className="grid grid-cols-2 gap-3">
+                           <div>
+                               <label className="block text-xs font-bold text-slate-500 uppercase mb-1">Semester Start</label>
+                               <input type="date" value={semesterStart} onChange={e => {setSemesterStart(e.target.value); if(selectedDay !== null) generateSemesterDates(selectedDay);}} className="w-full p-2 border rounded-lg" />
+                           </div>
+                           <div>
+                               <label className="block text-xs font-bold text-slate-500 uppercase mb-1">Semester End</label>
+                               <input type="date" value={semesterEnd} onChange={e => {setSemesterEnd(e.target.value); if(selectedDay !== null) generateSemesterDates(selectedDay);}} className="w-full p-2 border rounded-lg" />
+                           </div>
+                       </div>
                        <div>
                            <label className="block text-xs font-bold text-slate-500 uppercase mb-1">Day of Week</label>
                            <div className="flex gap-2">
@@ -245,6 +282,17 @@ export default function RecurringBooking() {
                                />
                            </div>
                        )}
+                       
+                       {/* SUBJECT SELECTOR FOR TESTS ONLY */}
+                       {(mode === 'Test' || mode === 'Semester Exam') && (
+                         <div>
+                             <label className="block text-xs font-bold text-slate-500 uppercase mb-1">Subject</label>
+                             <select required value={selectedSubject} onChange={e => setSelectedSubject(e.target.value)} className="w-full p-3 border border-purple-200 bg-purple-50/50 rounded-lg font-bold text-purple-900 outline-none focus:ring-2 focus:ring-purple-500">
+                               <option value="">-- Select Subject --</option>
+                               {subjects.map(s => <option key={s._id} value={s._id}>{s.code} - {s.name}</option>)}
+                             </select>
+                         </div>
+                       )}
                    </div>
                )}
 
@@ -277,15 +325,16 @@ export default function RecurringBooking() {
                         {generatedDates.length > 0 ? (
                             <div className="text-left w-full max-w-xs">
                                 <h3 className="font-bold text-slate-700 mb-4 border-b pb-2">Summary</h3>
-                                <p className="text-sm">📅 <strong>{generatedDates.length} Weeks</strong></p>
+                                <p className="text-sm">📅 <strong>{generatedDates.length} Classes</strong></p>
                                 <p className="text-sm">🚀 Starts: <strong>{generatedDates[0]}</strong></p>
                                 <p className="text-sm">🏁 Ends: <strong>{generatedDates[generatedDates.length-1]}</strong></p>
                                 <p className="text-sm">⏰ Periods: <strong>{selectedPeriods.join(", ")}</strong></p>
+                                {semesterStart && semesterEnd && <p className="text-sm text-green-600">📚 <strong>Semester Duration</strong></p>}
                             </div>
                         ) : (
                             <>
                                 <span className="text-4xl mb-2">📅</span>
-                                <p>Select a day to preview the recurring schedule.</p>
+                                <p>Set semester dates and select a day to preview the schedule.</p>
                             </>
                         )}
                     </div>

@@ -38,8 +38,7 @@ export default function App() {
   return (
     <div className="min-h-screen bg-gray-100 text-gray-800 font-sans">
       
-      {/* GLOBAL ANNOUNCEMENT BANNER */}
-      {!hideLayout && <AnnouncementBanner />}
+
 
       {/* HEADER */}
       {!hideLayout && (
