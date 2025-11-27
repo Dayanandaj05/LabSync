@@ -72,6 +72,12 @@ export default function RecurringBooking() {
       if(!examDate || selectedPeriods.length === 0 || !finalExamName || (user.role === 'Staff' && !selectedSubject)) {
           return alert("Please fill all details (Date, Periods, Name, Subject).");
       }
+      
+      // 3. Sunday Check
+      const examDateObj = new Date(examDate);
+      if (examDateObj.getDay() === 0) {
+          return alert("Tests and exams cannot be scheduled on Sundays.");
+      }
 
       const newEntry = {
           id: Date.now(),
@@ -123,7 +129,7 @@ export default function RecurringBooking() {
     } catch (err) { alert(err.response?.data?.error || "Failed"); }
   };
 
-  const daysOfWeek = [{ name: 'Mon', index: 1 }, { name: 'Tue', index: 2 }, { name: 'Wed', index: 3 }, { name: 'Thu', index: 4 }, { name: 'Fri', index: 5 }];
+  const daysOfWeek = [{ name: 'Mon', index: 1 }, { name: 'Tue', index: 2 }, { name: 'Wed', index: 3 }, { name: 'Thu', index: 4 }, { name: 'Fri', index: 5 }, { name: 'Sat', index: 6 }];
 
   return (
     <div className="max-w-5xl mx-auto p-6">
@@ -176,13 +182,15 @@ export default function RecurringBooking() {
                </div>
 
                {/* Subject Selector (Staff/Admin) */}
-               <div>
-                  <label className="block text-xs font-bold text-slate-500 uppercase mb-1">Subject</label>
-                  <select required value={selectedSubject} onChange={e => setSelectedSubject(e.target.value)} className="w-full p-3 border border-indigo-200 bg-indigo-50/50 rounded-lg font-bold text-indigo-900 outline-none focus:ring-2 focus:ring-indigo-500">
-                    <option value="">-- Select Subject --</option>
-                    {subjects.map(s => <option key={s._id} value={s._id}>{s.code} - {s.name}</option>)}
-                  </select>
-               </div>
+               {user.role === 'Staff' && (
+                 <div>
+                    <label className="block text-xs font-bold text-slate-500 uppercase mb-1">Subject</label>
+                    <select required value={selectedSubject} onChange={e => setSelectedSubject(e.target.value)} className="w-full p-3 border border-indigo-200 bg-indigo-50/50 rounded-lg font-bold text-indigo-900 outline-none focus:ring-2 focus:ring-indigo-500">
+                      <option value="">-- Select Subject --</option>
+                      {subjects.map(s => <option key={s._id} value={s._id}>{s.code} - {s.name}</option>)}
+                    </select>
+                 </div>
+               )}
 
                {/* Dynamic Inputs based on Mode */}
                {mode === 'Regular' ? (

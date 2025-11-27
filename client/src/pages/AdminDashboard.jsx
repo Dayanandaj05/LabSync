@@ -35,6 +35,13 @@ export default function AdminDashboard() {
   const [mStart, setMStart] = useState("");
   const [mEnd, setMEnd] = useState("");
   const [mReason, setMReason] = useState("");
+  
+  // Reports State
+  const [reportData, setReportData] = useState([]);
+  const [reportFilters, setReportFilters] = useState({ lab: 'All', role: 'All', status: 'All', user: 'All', subject: 'All', startDate: '', endDate: '', sortBy: 'date', order: 'desc' });
+  const [reportType, setReportType] = useState('bookings');
+  const [availableUsers, setAvailableUsers] = useState([]);
+  const [availableSubjects, setAvailableSubjects] = useState([]);
 
   const fetchData = async () => {
     if (!token) return;
@@ -52,8 +59,14 @@ export default function AdminDashboard() {
         setBookingHistory(historyRes.data.history || []);
       }
       if (activeTab === 'users') {
-        const listRes = await API.get("/api/admin/users", { headers: { Authorization: `Bearer ${token}` } });
+        const listRes = await API.get("/api/admin/data/users", { headers: { Authorization: `Bearer ${token}` } });
         setUsersList(listRes.data.users || []);
+      }
+      if (activeTab === 'reports') {
+        const usersRes = await API.get("/api/admin/data/users", { headers: { Authorization: `Bearer ${token}` } });
+        const subjectsRes = await API.get("/api/admin/subjects", { headers: { Authorization: `Bearer ${token}` } });
+        setAvailableUsers(usersRes.data.users || []);
+        setAvailableSubjects(subjectsRes.data.subjects || []);
       }
       if (activeTab === 'subjects') {
         const subRes = await API.get("/api/admin/subjects", { headers: { Authorization: `Bearer ${token}` } });
@@ -80,6 +93,7 @@ export default function AdminDashboard() {
   };
 
   useEffect(() => { fetchData(); }, [token, activeTab]);
+  useEffect(() => { if (activeTab === 'reports') fetchReportData(); }, [reportFilters, reportType, activeTab]);
 
   // --- ACTIONS ---
   const handlePostAnnouncement = async (e) => {
@@ -174,6 +188,29 @@ export default function AdminDashboard() {
     } catch (err) { alert("Failed to fetch user bookings"); }
   };
 
+  const fetchReportData = async () => {
+    if (!token) return;
+    try {
+      const params = new URLSearchParams(reportFilters);
+      const res = await API.get(`/api/admin/data/${reportType}?${params}`, { headers: { Authorization: `Bearer ${token}` } });
+      setReportData(res.data[reportType] || []);
+    } catch (err) { alert("Failed to fetch report data"); }
+  };
+
+  const handleFilterChange = (key, value) => {
+    setReportFilters(prev => ({ ...prev, [key]: value }));
+  };
+
+  const generateCSVUrl = () => {
+    const params = new URLSearchParams(reportFilters);
+    return `${import.meta.env.VITE_API_URL || "http://localhost:5001"}/api/admin/export-csv?${params}&token=${token}`;
+  };
+
+  const generatePDFUrl = () => {
+    const params = new URLSearchParams(reportFilters);
+    return `${import.meta.env.VITE_API_URL || "http://localhost:5001"}/api/admin/export-pdf?${params}&token=${token}`;
+  };
+
   const handleAction = async (endpoint, id, action) => {
     try {
       const url = `/api/admin/${endpoint}/${id}/${action}`;
@@ -234,7 +271,7 @@ export default function AdminDashboard() {
         {/* SIDEBAR */}
         <nav className="w-48 bg-white border-r flex flex-col pt-4 shrink-0 overflow-y-auto">
           <div className="px-4 mb-2 text-xs font-bold text-slate-400 uppercase tracking-wider">Dashboard</div>
-          {['Pending', 'History', 'Maintenance', 'Announcements', 'Users', 'Subjects', 'Analytics'].map(tab => (
+          {['Pending', 'History', 'Reports', 'Maintenance', 'Announcements', 'Users', 'Subjects', 'Analytics'].map(tab => (
              <button key={tab} onClick={() => setActiveTab(tab.toLowerCase())} 
                className={`text-left px-6 py-3 font-bold text-sm border-l-4 transition-all ${activeTab === tab.toLowerCase() ? 'border-indigo-600 bg-indigo-50 text-indigo-700' : 'border-transparent text-slate-500 hover:bg-slate-50 hover:text-slate-800'}`}>
                {tab}
@@ -471,6 +508,143 @@ export default function AdminDashboard() {
                   ))}
                 </div>
              </div>
+          )}
+
+          {/* TAB: REPORTS */}
+          {activeTab === 'reports' && (
+            <div className="flex flex-col h-full gap-4">
+              <div className="bg-white p-4 rounded-xl border shadow-sm">
+                <div className="flex flex-wrap items-center gap-3 mb-4">
+                  <select value={reportType} onChange={e => setReportType(e.target.value)} className="px-3 py-2 border rounded-lg font-bold">
+                    <option value="bookings">📅 Bookings</option>
+                    <option value="users">👥 Users</option>
+                    <option value="labs">🏢 Labs</option>
+                  </select>
+                  {reportType === 'bookings' && (
+                    <>
+                      <select value={reportFilters.lab} onChange={e => handleFilterChange('lab', e.target.value)} className="px-3 py-2 border rounded-lg">
+                        <option value="All">All Labs</option>
+                        <option value="CC">CC</option>
+                        <option value="IS">IS</option>
+                        <option value="CAT">CAT</option>
+                      </select>
+                      <select value={reportFilters.role} onChange={e => handleFilterChange('role', e.target.value)} className="px-3 py-2 border rounded-lg">
+                        <option value="All">All Roles</option>
+                        <option value="Student">Students</option>
+                        <option value="Staff">Staff</option>
+                        <option value="Admin">Admin</option>
+                      </select>
+                      <select value={reportFilters.status} onChange={e => handleFilterChange('status', e.target.value)} className="px-3 py-2 border rounded-lg">
+                        <option value="All">All Status</option>
+                        <option value="Approved">Approved</option>
+                        <option value="Pending">Pending</option>
+                        <option value="Rejected">Rejected</option>
+                      </select>
+                      <select value={reportFilters.user} onChange={e => handleFilterChange('user', e.target.value)} className="px-3 py-2 border rounded-lg">
+                        <option value="All">All Users</option>
+                        {availableUsers.map(u => <option key={u._id} value={u._id}>{u.name} ({u.role})</option>)}
+                      </select>
+                      <select value={reportFilters.subject} onChange={e => handleFilterChange('subject', e.target.value)} className="px-3 py-2 border rounded-lg">
+                        <option value="All">All Subjects</option>
+                        {availableSubjects.map(s => <option key={s._id} value={s._id}>{s.code}</option>)}
+                      </select>
+                      <input type="date" value={reportFilters.startDate} onChange={e => handleFilterChange('startDate', e.target.value)} className="px-3 py-2 border rounded-lg" placeholder="Start Date" />
+                      <input type="date" value={reportFilters.endDate} onChange={e => handleFilterChange('endDate', e.target.value)} className="px-3 py-2 border rounded-lg" placeholder="End Date" />
+                    </>
+                  )}
+                  <select value={reportFilters.sortBy} onChange={e => handleFilterChange('sortBy', e.target.value)} className="px-3 py-2 border rounded-lg">
+                    {reportType === 'bookings' && (
+                      <>
+                        <option value="date">Sort by Date</option>
+                        <option value="createdAt">Sort by Created</option>
+                        <option value="period">Sort by Period</option>
+                      </>
+                    )}
+                    {reportType === 'users' && (
+                      <>
+                        <option value="name">Sort by Name</option>
+                        <option value="role">Sort by Role</option>
+                        <option value="createdAt">Sort by Joined</option>
+                      </>
+                    )}
+                    {reportType === 'labs' && (
+                      <>
+                        <option value="code">Sort by Code</option>
+                        <option value="name">Sort by Name</option>
+                        <option value="capacity">Sort by Capacity</option>
+                      </>
+                    )}
+                  </select>
+                  <select value={reportFilters.order} onChange={e => handleFilterChange('order', e.target.value)} className="px-3 py-2 border rounded-lg">
+                    <option value="asc">↑ Ascending</option>
+                    <option value="desc">↓ Descending</option>
+                  </select>
+                  <a href={generateCSVUrl()} target="_blank" rel="noopener noreferrer" className="bg-green-600 text-white px-4 py-2 rounded-lg font-bold hover:bg-green-700">⬇ CSV</a>
+                  <a href={generatePDFUrl()} target="_blank" rel="noopener noreferrer" className="bg-red-600 text-white px-4 py-2 rounded-lg font-bold hover:bg-red-700">📄 PDF</a>
+                </div>
+              </div>
+              <div className="bg-white rounded-xl border shadow-sm flex-1 overflow-hidden">
+                <div className="p-4 border-b bg-slate-50 font-bold text-slate-700 flex justify-between">
+                  <span>{reportType.charAt(0).toUpperCase() + reportType.slice(1)} Report</span>
+                  <span className="bg-slate-200 px-2 rounded-full text-xs">{reportData.length} items</span>
+                </div>
+                <div className="overflow-auto h-full custom-scrollbar">
+                  {reportType === 'bookings' && (
+                    <table className="min-w-full text-sm">
+                      <thead className="bg-slate-50 sticky top-0">
+                        <tr><th className="p-3 text-left">Date</th><th className="p-3 text-left">Lab</th><th className="p-3 text-left">User</th><th className="p-3 text-left">Role</th><th className="p-3 text-left">Status</th></tr>
+                      </thead>
+                      <tbody className="divide-y">
+                        {reportData.map(b => (
+                          <tr key={b._id} className="hover:bg-slate-50">
+                            <td className="p-3">{b.date} P{b.period}</td>
+                            <td className="p-3 font-mono">{b.labCode}</td>
+                            <td className="p-3">{b.creatorName}<br/><span className="text-xs text-slate-400">{b.subject?.code}</span></td>
+                            <td className="p-3">{b.role}</td>
+                            <td className="p-3"><span className={`px-2 py-1 rounded text-xs ${b.status==='Approved'?'bg-green-100 text-green-700':'bg-red-100 text-red-700'}`}>{b.status}</span></td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  )}
+                  {reportType === 'users' && (
+                    <table className="min-w-full text-sm">
+                      <thead className="bg-slate-50 sticky top-0">
+                        <tr><th className="p-3 text-left">Name</th><th className="p-3 text-left">Email</th><th className="p-3 text-left">Role</th><th className="p-3 text-left">Class</th><th className="p-3 text-left">Status</th></tr>
+                      </thead>
+                      <tbody className="divide-y">
+                        {reportData.map(u => (
+                          <tr key={u._id} className="hover:bg-slate-50">
+                            <td className="p-3 font-bold">{u.name}</td>
+                            <td className="p-3 text-slate-600">{u.email}</td>
+                            <td className="p-3">{u.role}</td>
+                            <td className="p-3">{u.classGroup}</td>
+                            <td className="p-3"><span className={`px-2 py-1 rounded text-xs ${u.status==='Approved'?'bg-green-100 text-green-700':'bg-yellow-100 text-yellow-700'}`}>{u.status}</span></td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  )}
+                  {reportType === 'labs' && (
+                    <table className="min-w-full text-sm">
+                      <thead className="bg-slate-50 sticky top-0">
+                        <tr><th className="p-3 text-left">Code</th><th className="p-3 text-left">Name</th><th className="p-3 text-left">Capacity</th><th className="p-3 text-left">Maintenance</th></tr>
+                      </thead>
+                      <tbody className="divide-y">
+                        {reportData.map(l => (
+                          <tr key={l._id} className="hover:bg-slate-50">
+                            <td className="p-3 font-mono font-bold">{l.code}</td>
+                            <td className="p-3">{l.name}</td>
+                            <td className="p-3">{l.capacity}</td>
+                            <td className="p-3">{l.maintenanceLog?.length || 0} blocks</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  )}
+                </div>
+              </div>
+            </div>
           )}
 
           {/* TAB: ANALYTICS */}

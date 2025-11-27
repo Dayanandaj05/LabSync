@@ -336,14 +336,85 @@ router.delete('/announcements/:id', async (req, res) => {
   try { await Announcement.findByIdAndDelete(req.params.id); res.json({ message: 'Deleted successfully' }); } catch (e) { res.status(500).json({ error: 'Server error' }); }
 });
 
+// SORTED DATA ENDPOINTS
+router.get('/data/labs', async (req, res) => {
+  try {
+    const { sortBy = 'code', order = 'asc' } = req.query;
+    const sortOrder = order === 'desc' ? -1 : 1;
+    const labs = await Lab.find().sort({ [sortBy]: sortOrder }).lean();
+    res.json({ labs });
+  } catch (err) { res.status(500).json({ error: 'Failed to fetch labs' }); }
+});
+
+router.get('/data/users', async (req, res) => {
+  try {
+    const { role, sortBy = 'name', order = 'asc' } = req.query;
+    const filter = role && role !== 'All' ? { role } : {};
+    const sortOrder = order === 'desc' ? -1 : 1;
+    const users = await User.find(filter).select('-password').sort({ [sortBy]: sortOrder }).lean();
+    res.json({ users });
+  } catch (err) { res.status(500).json({ error: 'Failed to fetch users' }); }
+});
+
+router.get('/data/bookings', async (req, res) => {
+  try {
+    const { lab, role, status, user, subject, startDate, endDate, sortBy = 'date', order = 'desc' } = req.query;
+    const filter = {};
+    if (lab && lab !== 'All') {
+      const labDoc = await Lab.findOne({ code: lab });
+      if (labDoc) filter.lab = labDoc._id;
+    }
+    if (role && role !== 'All') filter.role = role;
+    if (status && status !== 'All') filter.status = status;
+    if (user && user !== 'All') filter.createdBy = user;
+    if (subject && subject !== 'All') filter.subject = subject;
+    if (startDate && endDate) {
+      filter.date = { $gte: startDate, $lte: endDate };
+    } else if (startDate) {
+      filter.date = { $gte: startDate };
+    } else if (endDate) {
+      filter.date = { $lte: endDate };
+    }
+    
+    const sortOrder = order === 'desc' ? -1 : 1;
+    const bookings = await Booking.find(filter)
+      .populate('lab', 'code name')
+      .populate('createdBy', 'name email')
+      .populate('subject', 'code name')
+      .sort({ [sortBy]: sortOrder })
+      .lean();
+    
+    res.json({ bookings: bookings.map(b => ({...b, labCode: b.lab?.code, creatorName: b.createdBy?.name})) });
+  } catch (err) { res.status(500).json({ error: 'Failed to fetch bookings' }); }
+});
+
 // EXPORT CSV
 router.get('/export-csv', async (req, res) => {
   try {
-    const bookings = await Booking.find()
+    const { lab, role, status, user, subject, startDate, endDate, sortBy = 'date', order = 'desc' } = req.query;
+    const filter = {};
+    if (lab && lab !== 'All') {
+      const labDoc = await Lab.findOne({ code: lab });
+      if (labDoc) filter.lab = labDoc._id;
+    }
+    if (role && role !== 'All') filter.role = role;
+    if (status && status !== 'All') filter.status = status;
+    if (user && user !== 'All') filter.createdBy = user;
+    if (subject && subject !== 'All') filter.subject = subject;
+    if (startDate && endDate) {
+      filter.date = { $gte: startDate, $lte: endDate };
+    } else if (startDate) {
+      filter.date = { $gte: startDate };
+    } else if (endDate) {
+      filter.date = { $lte: endDate };
+    }
+    
+    const sortOrder = order === 'desc' ? -1 : 1;
+    const bookings = await Booking.find(filter)
       .populate('lab', 'code')
       .populate('createdBy', 'name email')
       .populate('subject', 'code name')
-      .sort({ date: -1, period: 1 })
+      .sort({ [sortBy]: sortOrder })
       .lean();
 
     let csv = 'Date,Period,Lab,User Name,User Email,Role,Type,Subject,Purpose,Status,Created At\n';
@@ -360,6 +431,77 @@ router.get('/export-csv', async (req, res) => {
 
   } catch (err) {
     res.status(500).send("Failed to generate CSV report.");
+  }
+});
+
+// EXPORT PDF
+router.get('/export-pdf', async (req, res) => {
+  try {
+    const { lab, role, status, user, subject, startDate, endDate, sortBy = 'date', order = 'desc' } = req.query;
+    const filter = {};
+    if (lab && lab !== 'All') {
+      const labDoc = await Lab.findOne({ code: lab });
+      if (labDoc) filter.lab = labDoc._id;
+    }
+    if (role && role !== 'All') filter.role = role;
+    if (status && status !== 'All') filter.status = status;
+    if (user && user !== 'All') filter.createdBy = user;
+    if (subject && subject !== 'All') filter.subject = subject;
+    if (startDate && endDate) {
+      filter.date = { $gte: startDate, $lte: endDate };
+    } else if (startDate) {
+      filter.date = { $gte: startDate };
+    } else if (endDate) {
+      filter.date = { $lte: endDate };
+    }
+    
+    const sortOrder = order === 'desc' ? -1 : 1;
+    const bookings = await Booking.find(filter)
+      .populate('lab', 'code')
+      .populate('createdBy', 'name email')
+      .populate('subject', 'code name')
+      .sort({ [sortBy]: sortOrder })
+      .lean();
+
+    let html = `
+    <html><head><style>
+      body { font-family: Arial, sans-serif; margin: 20px; }
+      h1 { color: #333; border-bottom: 2px solid #4f46e5; padding-bottom: 10px; }
+      table { width: 100%; border-collapse: collapse; margin-top: 20px; }
+      th, td { border: 1px solid #ddd; padding: 8px; text-align: left; }
+      th { background-color: #f8f9fa; font-weight: bold; }
+      tr:nth-child(even) { background-color: #f9f9f9; }
+      .approved { color: #059669; font-weight: bold; }
+      .rejected { color: #dc2626; font-weight: bold; }
+      .pending { color: #d97706; font-weight: bold; }
+    </style></head><body>
+    <h1>LabSync Report - ${new Date().toLocaleDateString()}</h1>
+    <p>Total Records: ${bookings.length}</p>
+    <table>
+      <tr><th>Date</th><th>Period</th><th>Lab</th><th>User</th><th>Role</th><th>Subject</th><th>Status</th></tr>`;
+
+    bookings.forEach(b => {
+      const statusClass = b.status === 'Approved' ? 'approved' : b.status === 'Rejected' ? 'rejected' : 'pending';
+      html += `<tr>
+        <td>${b.date || 'N/A'}</td>
+        <td>${b.period || 'N/A'}</td>
+        <td>${b.lab?.code || 'N/A'}</td>
+        <td>${b.creatorName || 'N/A'}</td>
+        <td>${b.role || 'N/A'}</td>
+        <td>${b.subject?.code || 'N/A'}</td>
+        <td class="${statusClass}">${b.status}</td>
+      </tr>`;
+    });
+
+    html += '</table></body></html>';
+
+    const filename = `LabSync_Report_${new Date().toISOString().slice(0,10)}.pdf`;
+    res.header('Content-Type', 'text/html');
+    res.header('Content-Disposition', `inline; filename="${filename}"`);
+    return res.send(html);
+
+  } catch (err) {
+    res.status(500).send("Failed to generate PDF report.");
   }
 });
 

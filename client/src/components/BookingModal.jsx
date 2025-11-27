@@ -66,6 +66,12 @@ export default function BookingModal({ slots = [], onClose, onSubmit }) {
     e.preventDefault();
     if (isStaff && !selectedSubject) return alert("Staff members must select a Subject.");
     if (isAdmin && ['Test', 'Exam', 'Semester Exam'].includes(purposeType) && !selectedSubject) return alert("Tests/Exams require a Subject.");
+    
+    // Check for Sunday bookings for tests/exams
+    if (['Test', 'Exam', 'Semester Exam'].includes(purposeType)) {
+      const hasSunday = slots.some(slot => new Date(slot.date).getDay() === 0);
+      if (hasSunday) return alert("Tests and exams cannot be scheduled on Sundays.");
+    }
 
     let finalPurpose = "";
     if (purposeType === "Placement Preparation") {

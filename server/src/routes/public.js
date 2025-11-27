@@ -70,25 +70,23 @@ router.get('/subjects', async (req, res) => {
   } catch (err) { res.status(500).json({ error: 'Error' }); }
 });
 
-// 3. UPCOMING TESTS
+// 3. ALL TESTS (PAST & FUTURE)
 router.get('/upcoming-tests', async (req, res) => {
   try {
-    const today = new Date().toISOString().slice(0, 10);
     const query = {
-      date: { $gte: today },
       $or: [
-        { type: { $in: ['Test', 'Exam', 'Project Review', 'Workshop'] } },
+        { type: { $in: ['Test', 'Exam', 'Semester Exam', 'Project Review', 'Workshop'] } },
         { showInBanner: true }
       ]
     };
     const tests = await Booking.find(query)
       .populate('lab', 'code')
-      .sort({ date: 1 })
+      .sort({ date: -1 })
       .limit(500); 
       
     res.json({ tests });
   } catch (err) { 
-    console.error("UPCOMING TESTS ERROR:", err); // ✅ Log to Terminal
+    console.error("ALL TESTS ERROR:", err);
     res.status(500).json({ error: 'error' }); 
   }
 });

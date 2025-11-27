@@ -6,6 +6,7 @@ import BookingModal from "../components/BookingModal.jsx";
 import LogsViewer from "../components/LogsViewer.jsx"; 
 import LogoutButton from "../components/LogoutButton.jsx";
 import DateSelector from "../components/DateSelector.jsx"; 
+import TestCalendarModal from "../components/TestCalendarModal.jsx";
 import { getLocalToday } from "../utils/dateHelpers.js";
 import { io } from "socket.io-client"; 
 
@@ -17,7 +18,10 @@ export default function Home() {
   const [date, setDate] = useState(initialDate);
 
   const [gridData, setGridData] = useState({ labs: [], schedule: {} });
-  const [logs, setLogs] = useState([]); 
+  const [logs, setLogs] = useState([]);
+  const [announcements, setAnnouncements] = useState([]);
+  const [events, setEvents] = useState([]);
+  const [showCalendar, setShowCalendar] = useState(false); 
   
   // ✅ MULTI-SELECT STATE
   const [selectedSlots, setSelectedSlots] = useState([]); 
@@ -44,6 +48,10 @@ export default function Home() {
       setGridData({ labs: data.labs || [], schedule: scheduleMap });
       const logsData = await getLogs(50); 
       setLogs(logsData.logs || []);
+      const annoData = await API.get('/api/public/announcements');
+      setAnnouncements(annoData.data.announcements || []);
+      const eventsData = await API.get('/api/public/upcoming-tests');
+      setEvents(eventsData.data.tests || []);
     } catch (err) { console.error(err); } finally { setIsInitialLoading(false); setIsSyncing(false); }
   };
 
@@ -153,19 +161,85 @@ export default function Home() {
           <span className="flex items-center gap-1"><span className="w-3 h-3 bg-purple-100 border border-purple-300 rounded"></span> Staff</span>
       </div>
 
-      <div className="relative min-h-[300px]">
-        {isInitialLoading && <div className="absolute inset-0 bg-white/80 backdrop-blur-sm z-10 flex items-center justify-center rounded-xl"><div className="text-gray-500 text-sm animate-pulse font-semibold">Loading Schedule...</div></div>}
+      <div className="grid grid-cols-1 lg:grid-cols-4 gap-6">
+        <div className="lg:col-span-3">
+          <div className="relative min-h-[300px]">
+            {isInitialLoading && <div className="absolute inset-0 bg-white/80 backdrop-blur-sm z-10 flex items-center justify-center rounded-xl"><div className="text-gray-500 text-sm animate-pulse font-semibold">Loading Schedule...</div></div>}
+            
+            <TimetableGrid 
+              gridData={gridData} 
+              onSlotClick={handleSlotClick} 
+              currentUser={user} 
+              isReadOnly={isPast}
+              selectedSlots={selectedSlots} 
+            />
+          </div>
+          
+          <LogsViewer logs={logs} />
+        </div>
         
-        <TimetableGrid 
-          gridData={gridData} 
-          onSlotClick={handleSlotClick} 
-          currentUser={user} 
-          isReadOnly={isPast}
-          selectedSlots={selectedSlots} 
-        />
+        <div className="lg:col-span-1 space-y-4">
+          <div className="bg-white rounded-xl border shadow-sm p-4">
+            <h3 className="font-bold text-slate-700 mb-3 flex items-center gap-2">
+              📢 Announcements
+            </h3>
+            <div className="space-y-3 max-h-64 overflow-y-auto">
+              {announcements.length === 0 ? (
+                <p className="text-slate-400 text-sm italic">No announcements</p>
+              ) : (
+                announcements.map(a => (
+                  <div key={a._id} className="p-3 bg-slate-50 rounded-lg border">
+                    <div className="flex items-center gap-2 mb-1">
+                      <span className={`px-2 py-0.5 text-xs font-bold rounded ${a.type === 'Warning' ? 'bg-red-100 text-red-700' : 'bg-blue-100 text-blue-700'}`}>
+                        {a.type}
+                      </span>
+                      <span className={`text-xs px-2 py-0.5 rounded ${a.active ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-500'}`}>
+                        {a.active ? 'ACTIVE' : 'INACTIVE'}
+                      </span>
+                    </div>
+                    <p className="text-sm text-slate-700">{a.message}</p>
+                    <p className="text-xs text-slate-400 mt-1">
+                      Expires: {new Date(a.expiresAt).toLocaleDateString()}
+                    </p>
+                  </div>
+                ))
+              )}
+            </div>
+          </div>
+          
+          <div className="bg-white rounded-xl border shadow-sm p-4">
+            <div className="flex items-center justify-between mb-3">
+              <h3 className="font-bold text-slate-700 flex items-center gap-2">
+                📅 Events
+              </h3>
+              <button onClick={() => setShowCalendar(true)} className="bg-indigo-600 text-white px-3 py-1 rounded text-xs font-bold hover:bg-indigo-700">
+                📅 Calendar
+              </button>
+            </div>
+            <div className="space-y-2">
+              {events.filter(e => e.date >= date).slice(0, 6).map(e => (
+                <button key={e._id} onClick={() => setShowCalendar(true)} className="w-full p-2 bg-slate-50 rounded border text-xs text-left hover:bg-slate-100 transition">
+                  <div className="flex items-center gap-2 mb-1">
+                    <span className={`px-2 py-0.5 text-xs font-bold rounded ${
+                      e.type === 'Semester Exam' ? 'bg-red-100 text-red-700' :
+                      ['Test','Exam'].includes(e.type) ? 'bg-purple-100 text-purple-700' :
+                      'bg-orange-100 text-orange-700'
+                    }`}>
+                      {e.type}
+                    </span>
+                    <span className="font-mono text-slate-600">{e.date}</span>
+                  </div>
+                  <p className="text-slate-700 font-medium">{e.purpose}</p>
+                  <p className="text-slate-500">{e.labCode} • P{e.period}</p>
+                </button>
+              ))}
+              {events.filter(e => e.date >= date).length === 0 && (
+                <p className="text-slate-400 text-sm italic">No upcoming events</p>
+              )}
+            </div>
+          </div>
+        </div>
       </div>
-
-      <LogsViewer logs={logs} />
 
       {/* SINGLE SLOT MODAL (Occupied) */}
       {viewingSlot && !viewingSlot.isMulti && (
@@ -196,6 +270,9 @@ export default function Home() {
             onSubmit={handleBookingSubmit} 
           />
       )}
+
+      {/* CALENDAR MODAL */}
+      {showCalendar && <TestCalendarModal tests={events} onClose={() => setShowCalendar(false)} />}
 
     </div>
   );

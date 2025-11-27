@@ -15,6 +15,11 @@ router.post('/', jwtAuth, async (req, res) => {
 
     if (!labCode || !date || !period) return res.status(400).json({ error: 'Missing fields' });
     if (isPast(date)) return res.status(400).json({ error: 'Cannot book past dates.' });
+    
+    const bookingDate = new Date(date);
+    if (bookingDate.getDay() === 0 && (type === 'Test' || type === 'Exam')) {
+      return res.status(400).json({ error: 'Tests and exams cannot be scheduled on Sundays.' });
+    }
 
     const user = await User.findById(req.user.id);
     if (!user || user.status !== 'Approved') return res.status(403).json({ error: 'Account not approved' });
@@ -116,6 +121,12 @@ router.post('/recurring', jwtAuth, async (req, res) => {
         if(!targetLab) continue;
 
         for (const date of entry.dates) {
+            // Sunday Check for Tests/Exams
+            const bookingDate = new Date(date);
+            if (bookingDate.getDay() === 0 && (entry.type === 'Test' || entry.type === 'Exam' || entry.type === 'Semester Exam')) {
+              continue; // Skip Sunday bookings for tests/exams
+            }
+            
             // Maintenance Check
             const isMaintenance = (targetLab.maintenanceLog || []).some(m => 
                 date >= new Date(m.start).toISOString().slice(0,10) && 
