@@ -512,4 +512,131 @@ router.get('/export-pdf', async (req, res) => {
   }
 });
 
+// TEST ENDPOINT
+router.get('/test-bulk', (req, res) => {
+  res.json({ message: 'Bulk endpoint is working' });
+});
+
+// BULK TIMETABLE UPLOAD
+router.post('/bulk-timetable', async (req, res) => {
+  try {
+    console.log('Bulk timetable upload request received');
+    console.log('Request body:', JSON.stringify(req.body, null, 2));
+    
+    const { timetable } = req.body;
+    if (!Array.isArray(timetable) || timetable.length === 0) {
+      console.log('Invalid timetable data');
+      return res.status(400).json({ error: 'Invalid timetable data' });
+    }
+    
+    console.log('Timetable entries:', timetable.length);
+    
+    const { startDate, endDate, date } = timetable[0];
+    console.log('Date info:', { startDate, endDate, date });
+    
+    // Skip date validation if using specific dates
+    const hasSpecificDates = timetable.some(entry => entry.date);
+    if (!hasSpecificDates && (!startDate || !endDate)) {
+      return res.status(400).json({ error: 'CSV must include startDate and endDate columns for recurring bookings' });
+    }
+    
+    await Log.create({ 
+      action: 'BulkTimetableUpload', 
+      user: req.user.id, 
+      meta: { entries: timetable.length, startDate, endDate } 
+    });
+    
+    const dayMap = { Mon: 1, Tue: 2, Wed: 3, Thu: 4, Fri: 5, Sat: 6, Sun: 0 };
+    let successCount = 0;
+    const errors = [];
+    
+    for (const entry of timetable) {
+      try {
+        const { day, period, lab, subject, purpose } = entry;
+        console.log('Processing entry:', entry);
+        
+        const dayIndex = dayMap[day];
+        if (dayIndex === undefined) {
+          errors.push(`Invalid day: ${day}`);
+          continue;
+        }
+        
+        const labDoc = await Lab.findOne({ code: lab });
+        if (!labDoc) {
+          errors.push(`Lab ${lab} not found`);
+          continue;
+        }
+        
+        const subjectDoc = subject ? await Subject.findOne({ code: subject }) : null;
+        
+        // Check if entry has specific date or use day-based generation
+        if (entry.date) {
+          // Book for specific date
+          const bookingData = {
+            lab: labDoc._id,
+            date: entry.date,
+            period: parseInt(period),
+            createdBy: req.user.id,
+            creatorName: req.user.name,
+            role: req.user.role,
+            purpose: purpose || 'Semester Class',
+            type: 'Regular',
+            status: 'Approved',
+            subject: subjectDoc?._id || null
+          };
+          
+          console.log('Creating booking for specific date:', bookingData);
+          await Booking.create(bookingData);
+          successCount++;
+        } else {
+          // Generate recurring dates for this day within semester
+          const start = new Date(startDate);
+          const end = new Date(endDate);
+          const current = new Date(start);
+          
+          while (current.getDay() !== dayIndex && current <= end) {
+            current.setDate(current.getDate() + 1);
+          }
+          
+          while (current <= end) {
+            const bookingData = {
+              lab: labDoc._id,
+              date: current.toISOString().slice(0, 10),
+              period: parseInt(period),
+              createdBy: req.user.id,
+              creatorName: req.user.name,
+              role: req.user.role,
+              purpose: purpose || 'Semester Class',
+              type: 'Regular',
+              status: 'Approved',
+              subject: subjectDoc?._id || null
+            };
+            
+            console.log('Creating recurring booking:', bookingData);
+            await Booking.create(bookingData);
+            
+            successCount++;
+            current.setDate(current.getDate() + 7);
+          }
+        }
+        
+      } catch (err) {
+        console.error('Booking creation error:', err);
+        errors.push(`Row error: ${err.message}`);
+      }
+    }
+    
+    console.log(`Bulk upload completed: ${successCount} bookings created, ${errors.length} errors`);
+    
+    res.json({ 
+      message: `Created ${successCount} bookings for semester`, 
+      errors: errors.slice(0, 10) 
+    });
+    
+  } catch (err) {
+    console.error('Bulk upload error:', err);
+    res.status(500).json({ error: 'Bulk upload failed: ' + err.message });
+  }
+});
+
 module.exports = router;

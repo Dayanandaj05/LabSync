@@ -42,6 +42,13 @@ export default function AdminDashboard() {
   const [reportType, setReportType] = useState('bookings');
   const [availableUsers, setAvailableUsers] = useState([]);
   const [availableSubjects, setAvailableSubjects] = useState([]);
+  
+  // CSV Upload State
+  const [csvFile, setCsvFile] = useState(null);
+  const [csvData, setCsvData] = useState([]);
+  const [showCsvUpload, setShowCsvUpload] = useState(false);
+  const [semesterStartDate, setSemesterStartDate] = useState("");
+  const [semesterEndDate, setSemesterEndDate] = useState("");
 
   const fetchData = async () => {
     if (!token) return;
@@ -211,6 +218,79 @@ export default function AdminDashboard() {
     return `${import.meta.env.VITE_API_URL || "http://localhost:5001"}/api/admin/export-pdf?${params}&token=${token}`;
   };
 
+  const handleCsvUpload = (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+    setCsvFile(file);
+    
+    const reader = new FileReader();
+    reader.onload = (event) => {
+      const csv = event.target.result;
+      const lines = csv.split('\n').filter(line => line.trim());
+      const headers = lines[0].split(',').map(h => h.trim().toLowerCase());
+      
+      // Map flexible headers to standard keys
+      const headerMap = {};
+      headers.forEach((header, index) => {
+        if (header.includes('start')) headerMap.startDate = index;
+        else if (header.includes('end')) headerMap.endDate = index;
+        else if (header.includes('date') && !header.includes('start') && !header.includes('end')) headerMap.date = index;
+        else if (header.includes('day')) headerMap.day = index;
+        else if (header.includes('period')) headerMap.period = index;
+        else if (header.includes('lab')) headerMap.lab = index;
+        else if (header.includes('subject')) headerMap.subject = index;
+        else if (header.includes('purpose') || header.includes('title') || header.includes('class')) headerMap.purpose = index;
+      });
+      
+      const data = lines.slice(1).map(line => {
+        const values = line.split(',').map(v => v.trim());
+        return {
+          startDate: values[headerMap.startDate] || '',
+          endDate: values[headerMap.endDate] || '',
+          date: values[headerMap.date] || '',
+          day: values[headerMap.day] || '',
+          period: values[headerMap.period] || '',
+          lab: values[headerMap.lab] || '',
+          subject: values[headerMap.subject] || '',
+          purpose: values[headerMap.purpose] || ''
+        };
+      });
+      setCsvData(data);
+    };
+    reader.readAsText(file);
+  };
+
+  const handleBulkBooking = async () => {
+    if (csvData.length === 0) return alert('No CSV data to process');
+    console.log('CSV Data:', csvData);
+    
+    const firstRow = csvData[0];
+    console.log('First row:', firstRow);
+    
+    if (!firstRow.startDate && !firstRow.endDate && !firstRow.date) {
+      return alert('CSV must include date columns (startDate/endDate or specific dates)');
+    }
+    
+    const confirmMsg = firstRow.date ? 
+      `Upload ${csvData.length} specific date entries?` : 
+      `Upload ${csvData.length} timetable entries for semester ${firstRow.startDate} to ${firstRow.endDate}?`;
+      
+    if (!confirm(confirmMsg)) return;
+    
+    try {
+      console.log('Sending bulk timetable request...');
+      const response = await API.post('/api/admin/bulk-timetable', { timetable: csvData }, { headers: { Authorization: `Bearer ${token}` } });
+      console.log('Response:', response.data);
+      alert(response.data.message || 'Timetable uploaded successfully!');
+      setCsvData([]);
+      setCsvFile(null);
+      setShowCsvUpload(false);
+    } catch (err) {
+      console.error('Upload error:', err);
+      alert(err.response?.data?.error || 'Upload failed');
+    }
+  };
+
   const handleAction = async (endpoint, id, action) => {
     try {
       const url = `/api/admin/${endpoint}/${id}/${action}`;
@@ -263,6 +343,7 @@ export default function AdminDashboard() {
             </form>
             <div className="w-px h-6 bg-slate-200"></div>
             <Link to="/recurring" className="bg-slate-800 text-white px-3 py-1.5 rounded-lg hover:bg-black transition whitespace-nowrap">🔄 Recurrence</Link>
+            <button onClick={() => setShowCsvUpload(true)} className="bg-green-600 text-white px-3 py-1.5 rounded-lg hover:bg-green-700 transition whitespace-nowrap">📄 Upload Timetable</button>
             <a href={`${import.meta.env.VITE_API_URL || "http://localhost:5001"}/api/admin/export-csv?token=${token}`} target="_blank" rel="noopener noreferrer" className="bg-white border border-slate-300 text-slate-700 px-3 py-1.5 rounded-lg hover:bg-slate-50 transition font-bold whitespace-nowrap">⬇ CSV</a>
          </div>
       </div>
@@ -673,6 +754,35 @@ export default function AdminDashboard() {
 
         </main>
       </div>
+      
+      {/* CSV UPLOAD MODAL */}
+      {showCsvUpload && (
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50">
+          <div className="bg-white rounded-xl p-6 w-full max-w-2xl">
+            <h3 className="text-xl font-bold mb-4">Upload Semester Timetable</h3>
+            <p className="text-sm text-slate-600 mb-4">CSV accepts flexible headers: start, end, date (specific dates), day (recurring), period, lab, subject, purpose/title/class</p>
+            
+            <input type="file" accept=".csv" onChange={handleCsvUpload} className="mb-4 w-full p-2 border rounded" />
+            
+            {csvData.length > 0 && (
+              <div className="mb-4">
+                <p className="font-bold text-green-600">{csvData.length} entries loaded</p>
+                <div className="max-h-40 overflow-y-auto border rounded p-2 text-xs">
+                  {csvData.slice(0, 5).map((row, i) => (
+                    <div key={i} className="mb-1">{JSON.stringify(row)}</div>
+                  ))}
+                  {csvData.length > 5 && <div>...and {csvData.length - 5} more</div>}
+                </div>
+              </div>
+            )}
+            
+            <div className="flex gap-3">
+              <button onClick={() => setShowCsvUpload(false)} className="px-4 py-2 border rounded">Cancel</button>
+              <button onClick={handleBulkBooking} disabled={csvData.length === 0} className="px-4 py-2 bg-green-600 text-white rounded disabled:opacity-50">Upload Timetable</button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

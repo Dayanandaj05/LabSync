@@ -141,7 +141,13 @@ export default function RecurringBooking() {
 
     try {
         if (mode === 'Regular') {
-            if (generatedDates.length === 0 || selectedPeriods.length === 0) return alert("Incomplete data.");
+            if (generatedDates.length === 0 || selectedPeriods.length === 0 || !purpose.trim()) {
+                return alert("Please complete all fields: select day, periods, and enter purpose.");
+            }
+            if (user.role === 'Staff' && !selectedSubject) {
+                return alert("Staff must select a subject.");
+            }
+            
             await API.post('/api/bookings/recurring', {
                 labCode, periods: selectedPeriods, purpose, type: 'Regular', dates: generatedDates,
                 subjectId: selectedSubject || null, showInBanner: false
