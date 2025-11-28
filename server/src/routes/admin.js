@@ -437,6 +437,7 @@ router.get('/export-csv', async (req, res) => {
 // EXPORT PDF
 router.get('/export-pdf', async (req, res) => {
   try {
+    const puppeteer = require('puppeteer');
     const { lab, role, status, user, subject, startDate, endDate, sortBy = 'date', order = 'desc' } = req.query;
     const filter = {};
     if (lab && lab !== 'All') {
@@ -495,10 +496,16 @@ router.get('/export-pdf', async (req, res) => {
 
     html += '</table></body></html>';
 
+    const browser = await puppeteer.launch({ headless: true });
+    const page = await browser.newPage();
+    await page.setContent(html);
+    const pdf = await page.pdf({ format: 'A4', printBackground: true });
+    await browser.close();
+
     const filename = `LabSync_Report_${new Date().toISOString().slice(0,10)}.pdf`;
-    res.header('Content-Type', 'text/html');
-    res.header('Content-Disposition', `inline; filename="${filename}"`);
-    return res.send(html);
+    res.header('Content-Type', 'application/pdf');
+    res.header('Content-Disposition', `attachment; filename="${filename}"`);
+    return res.send(pdf);
 
   } catch (err) {
     res.status(500).send("Failed to generate PDF report.");
