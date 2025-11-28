@@ -13,11 +13,11 @@ const BookingSchema = new mongoose.Schema({
   showInBanner: { type: Boolean, default: false },
   bannerColor: { type: String, enum: ['pink', 'indigo', 'green', 'orange', 'red', 'blue'], default: 'blue' },
 
-  // ✅ UPDATED ENUM: Added 'Studies', 'Lab Practice', 'Progression'
   type: { 
     type: String, 
+    // ✅ ADDED 'Semester Exam' here
     enum: [
-        'Regular', 'Test', 'Exam', 'Event', 'Project Review', 'Workshop', 
+        'Regular', 'Test', 'Exam', 'Semester Exam', 'Event', 'Project Review', 'Workshop', 
         'Placement Preparation', 'Studies', 'Lab Practice', 'Progression', 'Other'
     ], 
     default: 'Regular' 

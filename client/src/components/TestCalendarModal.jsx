@@ -5,13 +5,13 @@ export default function TestCalendarModal({ tests = [], onClose }) {
   const now = new Date();
   const [viewYear, setViewYear] = useState(now.getFullYear());
   const [viewMonth, setViewMonth] = useState(now.getMonth());
+  
+  // Default to selected date being today, or null
   const [selectedDate, setSelectedDate] = useState(null);
 
   const todayStr = getTodayString();
   const grid = getCalendarGrid(viewYear, viewMonth);
-  // Get all dates that have ANY event
-  const eventDates = [...new Set(tests.map(t => t.date))];
-
+  
   const monthName = new Date(viewYear, viewMonth).toLocaleString('default', { month: 'long', year: 'numeric' });
 
   const handleNav = (dir) => {
@@ -24,25 +24,24 @@ export default function TestCalendarModal({ tests = [], onClose }) {
     setSelectedDate(null);
   };
 
-  // Helper: Get Color Style based on Event Type
   const getEventStyle = (evt) => {
     const type = evt.type;
-    // 1. Tests / Exams (Purple)
     if (['Test', 'Exam'].includes(type)) return 'bg-purple-100 text-purple-700 border-purple-200';
-    // 2. Project Reviews (Orange)
     if (type === 'Project Review') return 'bg-orange-100 text-orange-700 border-orange-200';
-    // 3. Workshops (Teal)
     if (type === 'Workshop') return 'bg-teal-100 text-teal-700 border-teal-200';
     
-    // 4. Custom Events (Based on Banner Color or Default)
     if (evt.showInBanner) {
         if (evt.bannerColor === 'red') return 'bg-red-100 text-red-700 border-red-200';
         if (evt.bannerColor === 'pink') return 'bg-pink-100 text-pink-700 border-pink-200';
         if (evt.bannerColor === 'green') return 'bg-emerald-100 text-emerald-700 border-emerald-200';
     }
-    // Default (Blue/Indigo)
     return 'bg-indigo-100 text-indigo-700 border-indigo-200';
   };
+
+  // ✅ Filter events for the list view based on selection
+  const selectedEvents = selectedDate 
+    ? tests.filter(t => t.date === selectedDate)
+    : [];
 
   return (
     <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50 px-4 animate-fade-in">
@@ -62,24 +61,37 @@ export default function TestCalendarModal({ tests = [], onClose }) {
 
           <div className="grid grid-cols-7 gap-2 content-start">
             {grid.map((dateStr, i) => {
-              if (!dateStr) return <div key={i} className="h-10"></div>;
+              if (!dateStr) return <div key={i} className="h-12"></div>;
               
               const dayNum = parseInt(dateStr.split('-')[2]);
-              const hasEvent = eventDates.includes(dateStr);
+              
+              // ✅ FIND ALL EVENTS FOR THIS DAY
+              const dayEvents = tests.filter(t => t.date === dateStr);
+              const hasEvent = dayEvents.length > 0;
+              
               const isSelected = selectedDate === dateStr;
               const isToday = dateStr === todayStr;
 
               return (
                 <button key={dateStr} disabled={!hasEvent} onClick={() => setSelectedDate(dateStr)}
-                  className={`h-12 rounded-xl text-sm font-bold transition-all relative flex items-center justify-center border-2 
+                  className={`h-12 rounded-xl text-sm font-bold transition-all relative flex flex-col items-center justify-center border-2 
                     ${isSelected ? 'bg-slate-800 text-white border-slate-800 shadow-lg scale-110 z-10' : 
                       hasEvent ? 'bg-white text-slate-700 border-slate-200 hover:border-slate-400 cursor-pointer shadow-sm' : 
                       'text-slate-300 border-transparent bg-slate-50/50 cursor-default'}
                     ${isToday && !isSelected && !hasEvent ? 'ring-2 ring-blue-100 border-blue-300 text-blue-500' : ''}
                   `}
                 >
-                  {dayNum}
-                  {hasEvent && !isSelected && <span className="absolute -bottom-1 w-1.5 h-1.5 bg-indigo-500 rounded-full"></span>}
+                  <span className="leading-none">{dayNum}</span>
+                  
+                  {/* ✅ MULTI-DOT INDICATOR */}
+                  {hasEvent && !isSelected && (
+                    <div className="flex gap-0.5 mt-1">
+                        {dayEvents.slice(0, 3).map((_, idx) => (
+                            <span key={idx} className={`w-1 h-1 rounded-full ${idx === 0 ? 'bg-indigo-500' : 'bg-indigo-300'}`}></span>
+                        ))}
+                        {dayEvents.length > 3 && <span className="w-1 h-1 rounded-full bg-indigo-200"></span>}
+                    </div>
+                  )}
                 </button>
               );
             })}
@@ -96,18 +108,18 @@ export default function TestCalendarModal({ tests = [], onClose }) {
         <div className="w-full md:w-80 bg-slate-50 p-6 flex flex-col relative border-l border-slate-200">
           <button onClick={onClose} className="absolute top-4 right-4 text-slate-400 hover:text-slate-600 text-xl">✕</button>
           <h3 className="text-xs font-extrabold text-slate-400 uppercase tracking-widest mb-6">
-            {selectedDate ? formatDateDisplay(selectedDate) : "Important Events"}
+            {selectedDate ? formatDateDisplay(selectedDate) : "Select a Date"}
           </h3>
           
           <div className="flex-1 overflow-y-auto space-y-3 pr-1 custom-scrollbar">
-            {selectedDate ? (
-               tests.filter(t => t.date === selectedDate).map(t => (
+            {selectedEvents.length > 0 ? (
+               selectedEvents.map(t => (
                  <div key={t._id} className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm transition hover:shadow-md">
                     <div className="flex justify-between items-start mb-2">
                       <span className={`text-[10px] px-2 py-0.5 rounded font-bold uppercase border ${getEventStyle(t)}`}>
                         {t.type}
                       </span>
-                      <span className="text-md font-bold text-slate-800 bg-slate-100 px-2 rounded">{t.lab.code}</span>
+                      <span className="text-md font-bold text-slate-800 bg-slate-100 px-2 rounded">{t.lab?.code || "LAB"}</span>
                     </div>
                     
                     <p className="text-sm text-slate-700 font-bold leading-snug mb-1">"{t.purpose}"</p>
@@ -120,8 +132,8 @@ export default function TestCalendarModal({ tests = [], onClose }) {
                ))
             ) : (
                <div className="flex flex-col items-center justify-center h-full text-slate-400 text-sm p-4 text-center">
-                 <span className="text-4xl mb-3">📅</span> 
-                 <p>Select a date to view Tests, Reviews, and Events.</p>
+                 <span className="text-4xl mb-3 opacity-50">📅</span> 
+                 <p>No events selected.</p>
                </div>
             )}
           </div>

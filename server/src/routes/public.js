@@ -6,16 +6,14 @@ const Log = require('../models/Log');
 const Subject = require('../models/Subject'); 
 const Announcement = require('../models/Announcement');
 
-// 1. GRID DATA (Now calculates Maintenance correctly)
+// 1. GRID DATA
 router.get('/grid-data', async (req, res) => {
   try {
-    const { date } = req.query; // "YYYY-MM-DD"
+    const { date } = req.query; 
     if (!date) return res.status(400).json({ error: 'Date required' });
 
     const labs = await Lab.find().lean();
     
-    // Check Maintenance for this specific date
-    // We compare strings "YYYY-MM-DD" to avoid timezone math
     const processedLabs = labs.map(l => {
         const isMaintenance = (l.maintenanceLog || []).some(log => {
             const start = new Date(log.start).toISOString().slice(0, 10);
@@ -34,69 +32,78 @@ router.get('/grid-data', async (req, res) => {
         };
     });
 
-    const bookings = await Booking.find({ date }).populate('lab').populate('subject').sort({ status: 1 }).lean();
+    const bookings = await Booking.find({ date })
+        .populate('lab')
+        .populate('subject')
+        .populate('waitlist.user', 'name email classGroup') 
+        .sort({ status: 1 })
+        .lean();
 
     res.json({
       date,
       labs: processedLabs, 
       bookings: bookings.map(b => ({
-        _id: b._id, labCode: b.lab?.code, period: b.period, status: b.status, role: b.role,
-        creatorName: b.creatorName, purpose: b.purpose, type: b.type, subjectCode: b.subject?.code
+        _id: b._id, 
+        labCode: b.lab?.code, 
+        period: b.period, 
+        status: b.status, 
+        role: b.role,
+        creatorName: b.creatorName, 
+        purpose: b.purpose, 
+        type: b.type, 
+        subjectCode: b.subject?.code,
+        waitlist: b.waitlist,
+        showInBanner: b.showInBanner
       }))
     });
-  } catch (err) { res.status(500).json({ error: 'Server Error' }); }
+  } catch (err) { 
+      console.error("GRID ERROR:", err); // ✅ Log to Terminal
+      res.status(500).json({ error: 'Server Error' }); 
+  }
 });
 
-// ... subjects, upcoming-tests endpoints stay the same ...
+// 2. SUBJECTS
 router.get('/subjects', async (req, res) => {
-  try { const subjects = await Subject.find({ active: true }).sort({ code: 1 }); res.json({ subjects }); } catch (err) { res.status(500).json({ error: 'Error' }); }
+  try { 
+      const subjects = await Subject.find({ active: true }).sort({ code: 1 }); 
+      res.json({ subjects }); 
+  } catch (err) { res.status(500).json({ error: 'Error' }); }
 });
 
+// 3. ALL TESTS (PAST & FUTURE)
 router.get('/upcoming-tests', async (req, res) => {
   try {
-    const today = new Date().toISOString().slice(0, 10);
-    
-    // Logic: Fetch dates >= Today AND (Is a Special Type OR Has Banner Flag)
     const query = {
-      date: { $gte: today },
       $or: [
-        { type: { $in: ['Test', 'Exam', 'Project Review', 'Workshop'] } },
+        { type: { $in: ['Test', 'Exam', 'Semester Exam', 'Project Review', 'Workshop'] } },
         { showInBanner: true }
       ]
     };
-
-    // ✅ CHANGED: Increased limit from 10 to 100 so the Calendar gets enough data
     const tests = await Booking.find(query)
-        .populate('lab', 'code')
-        .sort({ date: 1 })
-        .limit(100); 
-        
+      .populate('lab', 'code')
+      .sort({ date: -1 })
+      .limit(500); 
+      
     res.json({ tests });
-  } catch (err) { res.status(500).json({ error: 'error' }); }
+  } catch (err) { 
+    console.error("ALL TESTS ERROR:", err);
+    res.status(500).json({ error: 'error' }); 
+  }
 });
 
-// 2. CALENDAR STATUS (Adds Black Dots for Maintenance)
+// 4. CALENDAR STATUS
 router.get('/calendar-status', async (req, res) => {
   try {
     const { start, days } = req.query;
-    // Calculate End Date String
     const d = new Date(start || new Date());
     const endDateObj = new Date(d); 
     endDateObj.setDate(d.getDate() + (parseInt(days)||14));
     const end = endDateObj.toISOString().slice(0, 10);
 
-    // 1. Get Bookings
-    const bookings = await Booking.find({ 
-        date: { $gte: start, $lt: end }, 
-        status: 'Approved' 
-    }).lean();
-
-    // 2. Get Labs (for Maintenance checks)
+    const bookings = await Booking.find({ date: { $gte: start, $lt: end }, status: 'Approved' }).lean();
     const labs = await Lab.find().lean();
-
     const statusMap = {}; 
-
-    // Helper to mark a date
+    
     const markDate = (dateStr, type) => {
         if (!statusMap[dateStr]) statusMap[dateStr] = { hasExam: false, hasReview: false, hasMaintenance: false, count: 0 };
         if (type === 'Booking') statusMap[dateStr].count++;
@@ -105,7 +112,6 @@ router.get('/calendar-status', async (req, res) => {
         if (type === 'Maintenance') statusMap[dateStr].hasMaintenance = true;
     };
 
-    // Process Bookings
     bookings.forEach(b => {
         let type = 'Booking';
         if (['Test', 'Exam'].includes(b.type)) type = 'Test';
@@ -113,51 +119,39 @@ router.get('/calendar-status', async (req, res) => {
         markDate(b.date, type);
     });
 
-    // Process Maintenance (Loop through every day in the range)
     const curr = new Date(start);
     const last = new Date(end);
-    
     while(curr <= last) {
         const currStr = curr.toISOString().slice(0, 10);
-        
-        // Check if ANY lab is under maintenance on this day
         const isMaint = labs.some(l => (l.maintenanceLog || []).some(log => {
              const s = new Date(log.start).toISOString().slice(0,10);
              const e = new Date(log.end).toISOString().slice(0,10);
              return currStr >= s && currStr <= e;
         }));
-
         if(isMaint) markDate(currStr, 'Maintenance');
-
         curr.setDate(curr.getDate() + 1);
     }
-
     res.json({ statusMap });
   } catch (err) { res.status(500).json({ error: 'Error' }); }
 });
 
-// ... announcements, logs endpoints stay the same ...
-// ... (previous code)
-
+// 5. ANNOUNCEMENTS
 router.get('/announcements', async (req, res) => {
     try {
-        // ✅ FIX: Filter by Expiry Date
         const now = new Date();
-        
-        const announcements = await Announcement.find({ 
+        const query = {
             active: true,
-            expiresAt: { $gt: now } // Only show if Expiry is Greater Than Now
-        })
-        .sort({ createdAt: -1 })
-        .limit(5);
-
+            $or: [
+                { expiresAt: { $gt: now } },
+                { expiresAt: { $exists: false } } 
+            ]
+        };
+        const announcements = await Announcement.find(query).sort({ createdAt: -1 }).limit(5);
         res.json({ announcements });
-    } catch (err) {
-        res.status(500).json({ error: 'Error fetching announcements' });
-    }
+    } catch (err) { res.status(500).json({ error: 'Error fetching announcements' }); }
 });
 
-// ... (rest of file)
+// 6. LOGS
 router.get('/logs', async (req, res) => {
     const logs = await Log.find().sort({ timestamp: -1 }).limit(20).populate('user', 'name').lean();
     res.json({ logs });
