@@ -24,6 +24,7 @@ const BookingSchema = new mongoose.Schema({
   }, 
   
   purpose: { type: String },
+  specialReason: { type: String }, // For periods 10 & 11 special classes
   status: { type: String, enum: ['Pending','Approved','Rejected'], default: 'Pending' },
   adminReason: { type: String, default: '' },
   priority: { type: Number, default: 1 },

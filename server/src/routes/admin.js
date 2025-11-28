@@ -417,11 +417,19 @@ router.get('/export-csv', async (req, res) => {
       .sort({ [sortBy]: sortOrder })
       .lean();
 
-    let csv = 'Date,Period,Lab,User Name,User Email,Role,Type,Subject,Purpose,Status,Created At\n';
+    const { includeReasons } = req.query;
+    let csv = includeReasons === 'true' ? 
+      'Date,Period,Lab,User Name,User Email,Role,Type,Subject,Purpose,Special Reason,Status,Created At\n' :
+      'Date,Period,Lab,User Name,User Email,Role,Type,Subject,Purpose,Status,Created At\n';
 
     bookings.forEach(b => {
       const cleanPurpose = b.purpose ? `"${b.purpose.replace(/"/g, '""')}"` : '""';
-      csv += `${b.date||'N/A'},${b.period||'N/A'},${b.lab?.code||'N/A'},${b.creatorName||'N/A'},${b.createdBy?.email||'N/A'},${b.role||'N/A'},${b.type||'N/A'},${b.subject?.code||'N/A'},${cleanPurpose},${b.status},${b.createdAt}\n`;
+      if (includeReasons === 'true') {
+        const cleanSpecialReason = b.specialReason ? `"${b.specialReason.replace(/"/g, '""')}"` : '""';
+        csv += `${b.date||'N/A'},${b.period||'N/A'},${b.lab?.code||'N/A'},${b.creatorName||'N/A'},${b.createdBy?.email||'N/A'},${b.role||'N/A'},${b.type||'N/A'},${b.subject?.code||'N/A'},${cleanPurpose},${cleanSpecialReason},${b.status},${b.createdAt}\n`;
+      } else {
+        csv += `${b.date||'N/A'},${b.period||'N/A'},${b.lab?.code||'N/A'},${b.creatorName||'N/A'},${b.createdBy?.email||'N/A'},${b.role||'N/A'},${b.type||'N/A'},${b.subject?.code||'N/A'},${cleanPurpose},${b.status},${b.createdAt}\n`;
+      }
     });
 
     const filename = `LabSync_Report_${new Date().toISOString().slice(0,10)}.csv`;
@@ -464,34 +472,59 @@ router.get('/export-pdf', async (req, res) => {
       .sort({ [sortBy]: sortOrder })
       .lean();
 
+    const { includeReasons } = req.query;
+    let tableHeader = includeReasons === 'true' ?
+      '<tr><th>Date</th><th>Period</th><th>Lab</th><th>User</th><th>Role</th><th>Subject</th><th>Special Reason</th><th>Status</th></tr>' :
+      '<tr><th>Date</th><th>Period</th><th>Lab</th><th>User</th><th>Role</th><th>Subject</th><th>Status</th></tr>';
+    
     let html = `
     <html><head><style>
-      body { font-family: Arial, sans-serif; margin: 20px; }
-      h1 { color: #333; border-bottom: 2px solid #4f46e5; padding-bottom: 10px; }
+      body { font-family: 'Times New Roman', serif; margin: 20px; font-size: 12px; }
+      .header { text-align: center; font-size: 14px; font-weight: bold; margin-bottom: 20px; line-height: 1.4; }
+      h1 { color: #333; border-bottom: 2px solid #4f46e5; padding-bottom: 10px; font-size: 12px; }
       table { width: 100%; border-collapse: collapse; margin-top: 20px; }
-      th, td { border: 1px solid #ddd; padding: 8px; text-align: left; }
+      th, td { border: 1px solid #ddd; padding: 8px; text-align: left; font-size: 12px; }
       th { background-color: #f8f9fa; font-weight: bold; }
       tr:nth-child(even) { background-color: #f9f9f9; }
       .approved { color: #059669; font-weight: bold; }
       .rejected { color: #dc2626; font-weight: bold; }
       .pending { color: #d97706; font-weight: bold; }
     </style></head><body>
+    <div class="header">
+      PSG COLLEGE OF TECHNOLOGY<br>
+      DEPARTMENT OF COMPUTER APPLICATIONS<br>
+      MASTER OF COMPUTER APPLICATIONS
+    </div>
     <h1>LabSync Report - ${new Date().toLocaleDateString()}</h1>
     <p>Total Records: ${bookings.length}</p>
     <table>
-      <tr><th>Date</th><th>Period</th><th>Lab</th><th>User</th><th>Role</th><th>Subject</th><th>Status</th></tr>`;
+      ${tableHeader}`;
 
     bookings.forEach(b => {
       const statusClass = b.status === 'Approved' ? 'approved' : b.status === 'Rejected' ? 'rejected' : 'pending';
-      html += `<tr>
-        <td>${b.date || 'N/A'}</td>
-        <td>${b.period || 'N/A'}</td>
-        <td>${b.lab?.code || 'N/A'}</td>
-        <td>${b.creatorName || 'N/A'}</td>
-        <td>${b.role || 'N/A'}</td>
-        <td>${b.subject?.code || 'N/A'}</td>
-        <td class="${statusClass}">${b.status}</td>
-      </tr>`;
+      if (includeReasons === 'true') {
+        const specialReasonDisplay = b.specialReason || (([10, 11].includes(b.period)) ? 'Not specified' : 'N/A');
+        html += `<tr>
+          <td>${b.date || 'N/A'}</td>
+          <td>${b.period || 'N/A'}</td>
+          <td>${b.lab?.code || 'N/A'}</td>
+          <td>${b.creatorName || 'N/A'}</td>
+          <td>${b.role || 'N/A'}</td>
+          <td>${b.subject?.code || 'N/A'}</td>
+          <td>${specialReasonDisplay}</td>
+          <td class="${statusClass}">${b.status}</td>
+        </tr>`;
+      } else {
+        html += `<tr>
+          <td>${b.date || 'N/A'}</td>
+          <td>${b.period || 'N/A'}</td>
+          <td>${b.lab?.code || 'N/A'}</td>
+          <td>${b.creatorName || 'N/A'}</td>
+          <td>${b.role || 'N/A'}</td>
+          <td>${b.subject?.code || 'N/A'}</td>
+          <td class="${statusClass}">${b.status}</td>
+        </tr>`;
+      }
     });
 
     html += '</table></body></html>';
@@ -552,7 +585,7 @@ router.post('/bulk-timetable', async (req, res) => {
     
     for (const entry of timetable) {
       try {
-        const { day, period, lab, subject, purpose } = entry;
+        const { day, period, lab, subject, purpose, specialReason } = entry;
         console.log('Processing entry:', entry);
         
         const dayIndex = dayMap[day];
@@ -571,6 +604,18 @@ router.post('/bulk-timetable', async (req, res) => {
         
         // Check if entry has specific date or use day-based generation
         if (entry.date) {
+          // Check for conflicts on specific date
+          const existing = await Booking.findOne({ 
+            lab: labDoc._id, 
+            date: entry.date, 
+            period: parseInt(period) 
+          });
+          
+          if (existing) {
+            errors.push(`Conflict: ${entry.date} P${period} ${lab} already booked by ${existing.creatorName}`);
+            continue;
+          }
+          
           // Book for specific date
           const bookingData = {
             lab: labDoc._id,
@@ -582,16 +627,17 @@ router.post('/bulk-timetable', async (req, res) => {
             purpose: purpose || 'Semester Class',
             type: 'Regular',
             status: 'Approved',
-            subject: subjectDoc?._id || null
+            subject: subjectDoc?._id || null,
+            specialReason: specialReason || null
           };
           
           console.log('Creating booking for specific date:', bookingData);
           await Booking.create(bookingData);
           successCount++;
-        } else {
-          // Generate recurring dates for this day within semester
-          const start = new Date(startDate);
-          const end = new Date(endDate);
+        } else if (day && entry.startDate && entry.endDate) {
+          // Generate recurring dates for this day within entry's date range
+          const start = new Date(entry.startDate);
+          const end = new Date(entry.endDate);
           const current = new Date(start);
           
           while (current.getDay() !== dayIndex && current <= end) {
@@ -599,25 +645,41 @@ router.post('/bulk-timetable', async (req, res) => {
           }
           
           while (current <= end) {
-            const bookingData = {
-              lab: labDoc._id,
-              date: current.toISOString().slice(0, 10),
-              period: parseInt(period),
-              createdBy: req.user.id,
-              creatorName: req.user.name,
-              role: req.user.role,
-              purpose: purpose || 'Semester Class',
-              type: 'Regular',
-              status: 'Approved',
-              subject: subjectDoc?._id || null
-            };
+            const dateStr = current.toISOString().slice(0, 10);
             
-            console.log('Creating recurring booking:', bookingData);
-            await Booking.create(bookingData);
+            // Check for conflicts on this date
+            const existing = await Booking.findOne({ 
+              lab: labDoc._id, 
+              date: dateStr, 
+              period: parseInt(period) 
+            });
             
-            successCount++;
+            if (existing) {
+              errors.push(`Conflict: ${dateStr} P${period} ${lab} already booked by ${existing.creatorName}`);
+            } else {
+              const bookingData = {
+                lab: labDoc._id,
+                date: dateStr,
+                period: parseInt(period),
+                createdBy: req.user.id,
+                creatorName: req.user.name,
+                role: req.user.role,
+                purpose: purpose || 'Semester Class',
+                type: 'Regular',
+                status: 'Approved',
+                subject: subjectDoc?._id || null,
+                specialReason: specialReason || null
+              };
+              
+              console.log('Creating recurring booking:', bookingData);
+              await Booking.create(bookingData);
+              successCount++;
+            }
+            
             current.setDate(current.getDate() + 7);
           }
+        } else {
+          errors.push(`Entry missing required date information: ${JSON.stringify(entry)}`);
         }
         
       } catch (err) {

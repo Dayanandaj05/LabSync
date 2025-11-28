@@ -11,7 +11,7 @@ const isPast = (dateStr) => new Date(dateStr) < new Date().setHours(0,0,0,0);
 // 1. CREATE BOOKING (Single)
 router.post('/', jwtAuth, async (req, res) => {
   try {
-    const { labCode, date, period, purpose, type, subjectId, showInBanner, bannerColor } = req.body;
+    const { labCode, date, period, purpose, type, subjectId, showInBanner, bannerColor, specialReason } = req.body;
 
     if (!labCode || !date || !period) return res.status(400).json({ error: 'Missing fields' });
     if (isPast(date)) return res.status(400).json({ error: 'Cannot book past dates.' });
@@ -49,7 +49,7 @@ router.post('/', jwtAuth, async (req, res) => {
       lab: lab._id, date, period, createdBy: user._id, creatorName: user.name, role: user.role,
       purpose: purpose || '', type: type || 'Regular', status: initialStatus,
       subject: subjectId || null, showInBanner: showInBanner || false, bannerColor: bannerColor || 'blue',
-      priority: (user.role === 'Admin' ? 3 : user.role === 'Staff' ? 2 : 1)
+      specialReason: specialReason || null, priority: (user.role === 'Admin' ? 3 : user.role === 'Staff' ? 2 : 1)
     });
 
     req.app.get('io').emit('bookingUpdate', { labCode, date, period, action: 'create' });
@@ -75,7 +75,7 @@ router.post('/recurring', jwtAuth, async (req, res) => {
   try {
     if (req.user.role === 'Student') return res.status(403).json({ error: 'Students cannot create bulk bookings' });
 
-    const { batch, labCode, dates, periods, purpose, type, subjectId, showInBanner, bannerColor } = req.body; 
+    const { batch, labCode, dates, periods, purpose, type, subjectId, showInBanner, bannerColor, specialReason } = req.body; 
     
     // ✅ CRITICAL FIX: Check if it's a Batch OR a Regular Recurring request
     // Previous code failed because it always checked for 'dates' and 'periods'
@@ -99,7 +99,8 @@ router.post('/recurring', jwtAuth, async (req, res) => {
             type: item.type,
             subjectId: item.subjectId,
             showInBanner: true, 
-            bannerColor: item.type === 'Semester Exam' ? 'red' : 'indigo'
+            bannerColor: item.type === 'Semester Exam' ? 'red' : 'indigo',
+            specialReason: item.specialReason || null
         }));
     } 
     // MODE B: Standard Recurring (Old)
@@ -108,7 +109,7 @@ router.post('/recurring', jwtAuth, async (req, res) => {
         if (!lab) return res.status(404).json({ error: 'Lab not found' });
 
         bookingsToProcess.push({
-            labCode, dates, periods, purpose, type, subjectId, showInBanner, bannerColor
+            labCode, dates, periods, purpose, type, subjectId, showInBanner, bannerColor, specialReason
         });
     }
 
@@ -150,7 +151,8 @@ router.post('/recurring', jwtAuth, async (req, res) => {
                     isRecurring: true, recurrenceId, 
                     subject: entry.subjectId || null, 
                     showInBanner: entry.showInBanner || false, 
-                    bannerColor: entry.bannerColor || 'blue'
+                    bannerColor: entry.bannerColor || 'blue',
+                    specialReason: entry.specialReason || null
                 });
                 successCount++;
             }
