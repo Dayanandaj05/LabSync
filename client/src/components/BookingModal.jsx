@@ -15,11 +15,15 @@ export default function BookingModal({ slots = [], onClose, onSubmit }) {
   const [selectedSubject, setSelectedSubject] = useState("");
   const [showInBanner, setShowInBanner] = useState(false);
   const [bannerColor, setBannerColor] = useState("blue");
+  const [specialReason, setSpecialReason] = useState("");
 
   const AUTO_BANNER_TYPES = ['Test', 'Exam', 'Semester Exam', 'Project Review', 'Workshop'];
 
   // ✅ PRIMARY SLOT (For occupied logic, we take the first one)
   const primarySlot = slots[0];
+  
+  // Check if any slot has special periods (10 or 11)
+  const hasSpecialPeriods = slots.some(slot => [10, 11].includes(slot.period));
   
   useEffect(() => {
       API.get('/api/public/subjects').then(res => setSubjects(res.data.subjects || []));
@@ -82,6 +86,11 @@ export default function BookingModal({ slots = [], onClose, onSubmit }) {
     }
 
     if (!finalPurpose.trim()) return alert("Please enter a description/purpose.");
+    
+    // Validate special reason for periods 10 & 11
+    if (hasSpecialPeriods && !specialReason.trim()) {
+      return alert("Special reason is required for extended class hours (periods 10 & 11).");
+    }
 
     // Submit payload (Parent loop handles multiple slots)
     onSubmit({
@@ -89,7 +98,8 @@ export default function BookingModal({ slots = [], onClose, onSubmit }) {
       type: purposeType,
       subjectId: selectedSubject || null,
       showInBanner, 
-      bannerColor
+      bannerColor,
+      specialReason: hasSpecialPeriods ? specialReason : null
     });
   };
 
@@ -158,6 +168,11 @@ export default function BookingModal({ slots = [], onClose, onSubmit }) {
              <div>
                 <h3 className="text-blue-900 font-bold text-lg">Your Booking</h3>
                 <p className="text-blue-700 text-sm mt-1">{primarySlot.existingBooking.purpose}</p>
+                {[10, 11].includes(primarySlot.period) && primarySlot.existingBooking.specialReason && (
+                  <p className="text-orange-700 text-xs mt-1 bg-orange-50 p-2 rounded border border-orange-200">
+                    ⏰ <strong>Special Reason:</strong> {primarySlot.existingBooking.specialReason}
+                  </p>
+                )}
                 <div className={`inline-block px-3 py-1 rounded-full text-xs font-bold mt-2 uppercase ${primarySlot.existingBooking.status === 'Approved' ? 'bg-green-100 text-green-700' : 'bg-yellow-100 text-yellow-700'}`}>{primarySlot.existingBooking.status}</div>
              </div>
              <button onClick={handleCancelBooking} className="w-full bg-white border-2 border-red-100 text-red-600 py-2 rounded-lg font-bold hover:bg-red-50">🗑 Cancel My Booking</button>
@@ -168,7 +183,15 @@ export default function BookingModal({ slots = [], onClose, onSubmit }) {
           <div className="space-y-4">
               <div className="bg-slate-50 border border-slate-200 p-4 rounded-xl">
                 <div className="flex justify-between items-start mb-2">
-                  <div><div className="text-slate-900 font-bold">{primarySlot.existingBooking.creatorName}</div><div className="text-slate-500 text-xs italic">"{primarySlot.existingBooking.purpose}"</div></div>
+                  <div>
+                    <div className="text-slate-900 font-bold">{primarySlot.existingBooking.creatorName}</div>
+                    <div className="text-slate-500 text-xs italic">"{primarySlot.existingBooking.purpose}"</div>
+                    {[10, 11].includes(primarySlot.period) && primarySlot.existingBooking.specialReason && (
+                      <div className="text-orange-600 text-xs mt-1 bg-orange-50 px-2 py-1 rounded border border-orange-200">
+                        ⏰ {primarySlot.existingBooking.specialReason}
+                      </div>
+                    )}
+                  </div>
                   <span className={`px-2 py-1 rounded text-[10px] font-bold uppercase ${primarySlot.existingBooking.status === 'Approved' ? 'bg-green-100 text-green-700' : 'bg-yellow-100 text-yellow-700'}`}>{primarySlot.existingBooking.status}</span>
                 </div>
                 <div className="grid grid-cols-2 gap-2 mt-4">
@@ -235,6 +258,21 @@ export default function BookingModal({ slots = [], onClose, onSubmit }) {
                  <div>
                     <label className="block text-sm font-bold text-slate-700 mb-2">Details / Topic</label>
                     <input type="text" required={isDetailRequired()} value={customPurpose} onChange={(e) => setCustomPurpose(e.target.value)} placeholder={getPlaceholder()} className="w-full p-3 border border-slate-300 rounded-xl outline-none focus:ring-2 focus:ring-blue-500" />
+                 </div>
+              )}
+
+              {hasSpecialPeriods && (
+                 <div className="bg-orange-50 p-4 rounded-xl border border-orange-200 animate-fade-in">
+                    <label className="block text-sm font-bold text-orange-700 mb-2">⏰ Special Class Reason <span className="text-red-500">*</span></label>
+                    <p className="text-xs text-orange-600 mb-3">Extended hours (3:20-4:30 or 4:30-6:00) require specific justification</p>
+                    <input 
+                       type="text" 
+                       required 
+                       value={specialReason} 
+                       onChange={(e) => setSpecialReason(e.target.value)} 
+                       placeholder="e.g. Project completion, Extra practice session, Makeup class" 
+                       className="w-full p-3 border border-orange-300 rounded-xl outline-none focus:ring-2 focus:ring-orange-500 bg-white" 
+                    />
                  </div>
               )}
 

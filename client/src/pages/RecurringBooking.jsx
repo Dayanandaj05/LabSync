@@ -21,6 +21,7 @@ export default function RecurringBooking() {
   const [selectedSubject, setSelectedSubject] = useState("");
   const [semesterStart, setSemesterStart] = useState("");
   const [semesterEnd, setSemesterEnd] = useState("");
+  const [specialReason, setSpecialReason] = useState("");
 
   // --- EXAM BATCH STATE ---
   const [examDate, setExamDate] = useState("");
@@ -47,6 +48,9 @@ export default function RecurringBooking() {
   const togglePeriod = (p) => {
     setSelectedPeriods(prev => prev.includes(p) ? prev.filter(i => i !== p) : [...prev, p].sort((a,b)=>a-b));
   };
+  
+  // Check if special periods are selected
+  const hasSpecialPeriods = selectedPeriods.some(p => [10, 11].includes(p));
 
   // --- LOGIC: REGULAR SEMESTER ---
   const handleDaySelect = (dayIndex) => {
@@ -100,6 +104,11 @@ export default function RecurringBooking() {
           return alert("Please fill all details (Date, Periods, Name, Subject).");
       }
       
+      // Special periods validation
+      if (hasSpecialPeriods && !specialReason.trim()) {
+          return alert("Special reason is required for extended class hours (periods 10 & 11).");
+      }
+      
       // 3. Sunday Check
       const examDateObj = new Date(examDate);
       if (examDateObj.getDay() === 0) {
@@ -114,13 +123,15 @@ export default function RecurringBooking() {
           purpose: `${mode}: ${finalExamName}`, 
           type: mode, 
           subjectId: selectedSubject || null,
-          subjectName: subjects.find(s => s._id === selectedSubject)?.name || "N/A"
+          subjectName: subjects.find(s => s._id === selectedSubject)?.name || "N/A",
+          specialReason: hasSpecialPeriods ? specialReason : null
       };
 
       setExamQueue(prev => [...prev, newEntry].sort((a,b) => new Date(a.date) - new Date(b.date)));
       
       // 3. Reset Inputs
       setSelectedPeriods([]);
+      setSpecialReason("");
   };
 
   const removeFromQueue = (id) => {
@@ -147,10 +158,13 @@ export default function RecurringBooking() {
             if (user.role === 'Staff' && !selectedSubject) {
                 return alert("Staff must select a subject.");
             }
+            if (hasSpecialPeriods && !specialReason.trim()) {
+                return alert("Special reason is required for extended class hours (periods 10 & 11).");
+            }
             
             await API.post('/api/bookings/recurring', {
                 labCode, periods: selectedPeriods, purpose, type: 'Regular', dates: generatedDates,
-                subjectId: selectedSubject || null, showInBanner: false
+                subjectId: selectedSubject || null, showInBanner: false, specialReason: hasSpecialPeriods ? specialReason : null
             }, { headers: { Authorization: `Bearer ${token}` } });
         } else {
             if (examQueue.length === 0) return alert("Queue is empty. Add exams first.");
@@ -306,11 +320,30 @@ export default function RecurringBooking() {
                <div>
                   <label className="block text-xs font-bold text-slate-500 uppercase mb-2">Periods</label>
                   <div className="grid grid-cols-5 gap-2">
-                    {[1,2,3,4,5,6,7,8,9,10].map(p => (
-                      <button key={p} type="button" onClick={() => togglePeriod(p)} className={`h-10 rounded text-sm font-bold border transition-all ${selectedPeriods.includes(p) ? 'bg-indigo-600 text-white' : 'bg-white text-slate-400 hover:border-indigo-300'}`}>{p}</button>
+                    {[1,2,4,5,7,8,9,10,11].map(p => (
+                      <button key={p} type="button" onClick={() => togglePeriod(p)} className={`h-10 rounded text-sm font-bold border transition-all ${selectedPeriods.includes(p) ? ([10,11].includes(p) ? 'bg-orange-600 text-white' : 'bg-indigo-600 text-white') : 'bg-white text-slate-400 hover:border-indigo-300'} ${[10,11].includes(p) ? 'border-orange-300' : ''}`}>{p}</button>
                     ))}
                   </div>
+                  {hasSpecialPeriods && (
+                     <p className="text-xs text-orange-600 mt-2 font-medium">⚠️ Special periods selected (extended hours)</p>
+                  )}
                </div>
+
+               {/* Special Reason for Periods 10 & 11 */}
+               {hasSpecialPeriods && (
+                  <div className="bg-orange-50 p-4 rounded-xl border border-orange-200 animate-fade-in">
+                     <label className="block text-xs font-bold text-orange-700 uppercase mb-2">Special Class Reason *</label>
+                     <p className="text-xs text-orange-600 mb-3">Extended hours require specific justification</p>
+                     <input 
+                        type="text" 
+                        required 
+                        value={specialReason} 
+                        onChange={e => setSpecialReason(e.target.value)} 
+                        placeholder="e.g. Project completion, Extra practice, Makeup class" 
+                        className="w-full p-3 border border-orange-300 rounded-lg outline-none focus:ring-2 focus:ring-orange-500 bg-white" 
+                     />
+                  </div>
+               )}
 
                {/* Action Button */}
                {mode === 'Regular' ? (

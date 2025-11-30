@@ -38,7 +38,7 @@ export default function AdminDashboard() {
   
   // Reports State
   const [reportData, setReportData] = useState([]);
-  const [reportFilters, setReportFilters] = useState({ lab: 'All', role: 'All', status: 'All', user: 'All', subject: 'All', startDate: '', endDate: '', sortBy: 'date', order: 'desc' });
+  const [reportFilters, setReportFilters] = useState({ lab: 'All', role: 'All', status: 'All', user: 'All', subject: 'All', startDate: '', endDate: '', sortBy: 'date', order: 'desc', includeReasons: false });
   const [reportType, setReportType] = useState('bookings');
   const [availableUsers, setAvailableUsers] = useState([]);
   const [availableSubjects, setAvailableSubjects] = useState([]);
@@ -240,6 +240,7 @@ export default function AdminDashboard() {
         else if (header.includes('lab')) headerMap.lab = index;
         else if (header.includes('subject')) headerMap.subject = index;
         else if (header.includes('purpose') || header.includes('title') || header.includes('class')) headerMap.purpose = index;
+        else if (header.includes('special') || header.includes('reason')) headerMap.specialReason = index;
       });
       
       const data = lines.slice(1).map(line => {
@@ -252,7 +253,8 @@ export default function AdminDashboard() {
           period: values[headerMap.period] || '',
           lab: values[headerMap.lab] || '',
           subject: values[headerMap.subject] || '',
-          purpose: values[headerMap.purpose] || ''
+          purpose: values[headerMap.purpose] || '',
+          specialReason: values[headerMap.specialReason] || ''
         };
       });
       setCsvData(data);
@@ -631,6 +633,10 @@ export default function AdminDashboard() {
                       </select>
                       <input type="date" value={reportFilters.startDate} onChange={e => handleFilterChange('startDate', e.target.value)} className="px-3 py-2 border rounded-lg" placeholder="Start Date" />
                       <input type="date" value={reportFilters.endDate} onChange={e => handleFilterChange('endDate', e.target.value)} className="px-3 py-2 border rounded-lg" placeholder="End Date" />
+                      <label className="flex items-center gap-2 px-3 py-2 border rounded-lg bg-orange-50 border-orange-200">
+                        <input type="checkbox" checked={reportFilters.includeReasons} onChange={e => handleFilterChange('includeReasons', e.target.checked)} className="w-4 h-4" />
+                        <span className="text-sm font-medium text-orange-700">Include Special Reasons</span>
+                      </label>
                     </>
                   )}
                   <select value={reportFilters.sortBy} onChange={e => handleFilterChange('sortBy', e.target.value)} className="px-3 py-2 border rounded-lg">
@@ -680,7 +686,13 @@ export default function AdminDashboard() {
                           <tr key={b._id} className="hover:bg-slate-50">
                             <td className="p-3">{b.date} P{b.period}</td>
                             <td className="p-3 font-mono">{b.labCode}</td>
-                            <td className="p-3">{b.creatorName}<br/><span className="text-xs text-slate-400">{b.subject?.code}</span></td>
+                            <td className="p-3">
+                              {b.creatorName}<br/>
+                              <span className="text-xs text-slate-400">{b.subject?.code}</span>
+                              {reportFilters.includeReasons && [10,11].includes(b.period) && b.specialReason && (
+                                <div className="text-xs text-orange-600 bg-orange-50 px-1 rounded mt-1">⏰ {b.specialReason}</div>
+                              )}
+                            </td>
                             <td className="p-3">{b.role}</td>
                             <td className="p-3"><span className={`px-2 py-1 rounded text-xs ${b.status==='Approved'?'bg-green-100 text-green-700':'bg-red-100 text-red-700'}`}>{b.status}</span></td>
                           </tr>
@@ -760,7 +772,7 @@ export default function AdminDashboard() {
         <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50">
           <div className="bg-white rounded-xl p-6 w-full max-w-2xl">
             <h3 className="text-xl font-bold mb-4">Upload Semester Timetable</h3>
-            <p className="text-sm text-slate-600 mb-4">CSV accepts flexible headers: start, end, date (specific dates), day (recurring), period, lab, subject, purpose/title/class</p>
+            <p className="text-sm text-slate-600 mb-4">CSV accepts flexible headers: start, end, date (specific dates), day (recurring), period, lab, subject, purpose/title/class, specialreason (for periods 10 & 11)</p>
             
             <input type="file" accept=".csv" onChange={handleCsvUpload} className="mb-4 w-full p-2 border rounded" />
             

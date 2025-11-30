@@ -10,6 +10,8 @@ const PERIOD_LABELS = {
   7: "1:40 - 2:30",
   8: "2:30 - 3:20",
   9: "3:20 - 4:30",
+  10: "3:20 - 4:30",
+  11: "4:30 - 6:00",
 };
 
 export default function TimetableGrid({ gridData, onSlotClick, currentUser, isReadOnly, selectedSlots = [] }) {
@@ -72,6 +74,11 @@ export default function TimetableGrid({ gridData, onSlotClick, currentUser, isRe
         <span className="text-[10px] text-gray-500 truncate max-w-[90%] italic">
           {cell.purpose}
         </span>
+        {[10, 11].includes(cell.period) && cell.specialReason && (
+          <span className="text-[9px] text-orange-600 truncate max-w-[90%] font-medium bg-orange-50 px-1 rounded mt-0.5 block">
+            ⏰ {cell.specialReason}
+          </span>
+        )}
         <div className={`mt-1 text-[9px] px-2 py-0.5 rounded-full font-medium shadow-sm bg-white/80 backdrop-blur-sm ${
           cell.status === 'Approved' ? 'text-emerald-700' : 'text-amber-700'
         }`}>
